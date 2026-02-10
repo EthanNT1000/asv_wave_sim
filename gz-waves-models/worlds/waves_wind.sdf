@@ -73,12 +73,12 @@
 
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://waves</uri>
+      <uri>package://gz_waves_models/models/waves</uri>
     </include>
 
     <include>
       <pose>5 0 0 0 0 0</pose>
-      <uri>model://wam-v</uri>
+      <uri>package://gz_waves_models/models/wam-v</uri>
     </include>
 
     <!-- gz-sim/examples/worlds/wind.sdf -->

@@ -7,14 +7,14 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/WAM-V-Base.dae</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/WAM-V-Base.dae</uri>
           </mesh>
         </geometry>
       </visual>
       <collision name="collision">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/wam-v-base_collision_406.stl</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/wam-v-base_collision_406.stl</uri>
           </mesh>
         </geometry>
       </collision>
@@ -48,7 +48,7 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/engine.dae</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/engine.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -99,7 +99,7 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/engine.dae</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/engine.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -150,7 +150,7 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/propeller.dae</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/propeller.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -195,7 +195,7 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>model://wam-v/meshes/propeller.dae</uri>
+            <uri>package://gz_waves_models/models/wam-v/meshes/propeller.dae</uri>
           </mesh>
         </geometry>
       </visual>

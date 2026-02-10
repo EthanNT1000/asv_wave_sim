@@ -54,7 +54,7 @@
 
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://ocean_waves</uri>
+      <uri>package://gz_waves_models/models/ocean_waves</uri>
     </include>
 
     <model name="axes">
@@ -115,7 +115,7 @@
     </model>
 
     <include>
-      <uri>model://mumbles_head</uri>
+      <uri>package://gz_waves_models/models/mumbles_head</uri>
     </include>
     
   </world>

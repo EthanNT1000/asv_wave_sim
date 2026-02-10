@@ -38,7 +38,7 @@
                 <min_height>10</min_height>
                 <fade_dist>5</fade_dist>
               </blend>
-            <uri>model://mumbles_head/materials/textures/mumbles_head_513.png</uri>
+            <uri>package://gz_waves_models/models/mumbles_head/materials/textures/mumbles_head_513.png</uri>
             <size>1000 1000 50</size>
             <pos>-550 550 -10</pos>
           </heightmap>

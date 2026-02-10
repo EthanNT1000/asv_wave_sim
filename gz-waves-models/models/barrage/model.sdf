@@ -5,43 +5,43 @@
 
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy0</name>
     </include>
 
     <include>
       <pose>-3.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy-1</name>
     </include>
 
     <include>
       <pose>3.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy+1</name>
     </include>
 
     <include>
       <pose>-6.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy-2</name>
     </include>
 
     <include>
       <pose>6.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy+2</name>
     </include>
 
     <include>
       <pose>-9.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy-3</name>
     </include>
 
     <include>
       <pose>9.0 0 0 0 0 0</pose>
-      <uri>model://barrage_buoy</uri>
+      <uri>package://gz_waves_models/models/barrage_buoy</uri>
       <name>buoy+3</name>
     </include>
 

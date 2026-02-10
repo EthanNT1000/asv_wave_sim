@@ -40,8 +40,8 @@
 
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <!-- <uri>model://waves</uri> -->
-      <uri>model://regular_waves</uri>
+      <!-- <uri>package://gz_waves_models/models/waves</uri> -->
+      <uri>package://gz_waves_models/models/regular_waves</uri>
     </include>
 
     <!-- ENU axes -->
@@ -99,13 +99,13 @@
     <!-- full scale version -->
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://rm3_wec</uri>
+      <uri>package://gz_waves_models/models/rm3_wec</uri>
     </include>
 
     <!-- 1/10 scale version as wave height sensor -->
     <!-- <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://rm3_wec_mini</uri>
+      <uri>package://gz_waves_models/models/rm3_wec_mini</uri>
     </include> -->
 
   </world>

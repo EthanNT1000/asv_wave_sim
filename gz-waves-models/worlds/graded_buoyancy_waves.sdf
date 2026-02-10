@@ -59,7 +59,7 @@
 
     <include>
       <pose>0 0 0 0 0 0</pose>
-      <uri>model://waves</uri>
+      <uri>package://gz_waves_models/models/waves</uri>
     </include>
 
     <model name='lighter_than_water'>

@@ -11,7 +11,7 @@
         <pose>0 0 0 1.5708 0 0</pose>
         <geometry>
           <mesh>
-            <uri>model://duck/meshes/duck.dae</uri>
+            <uri>package://gz_waves_models/models/duck/meshes/duck.dae</uri>
           </mesh>
         </geometry>
       </visual>
@@ -19,7 +19,7 @@
         <pose>0 0 0 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>model://duck/meshes/duck_collision.stl</uri>
+            <uri>package://gz_waves_models/models/duck/meshes/duck_collision.stl</uri>
           </mesh>
         </geometry>
       </collision>
