@@ -1,3 +1,1 @@
 prepend-non-duplicate;GZ_SIM_SYSTEM_PLUGIN_PATH;@PROJECT_NAME@/lib
-prepend-non-duplicate;LD_LIBRARY_PATH;@PROJECT_NAME@/lib
-prepend-non-duplicate;LD_LIBRARY_PATH;/usr/lib/x86_64-linux-gnu/OGRE-2.3/

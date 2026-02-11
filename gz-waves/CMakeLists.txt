@@ -194,36 +194,77 @@ else()
 endif()
 
 #--------------------------------------
-# Find OGRE
-list(APPEND gz_ogre_components "RTShaderSystem" "Terrain" "Overlay" "Paging")
+if("$ENV{ROS_DISTRO}" STREQUAL "jazzy")
+  # Resolve https://github.com/srmainwaring/asv_wave_sim/issues/168 by applying the CMakeLists that provided by SeapathMasteron on Jul 4, 2024
+  # Manually set OGRE2 paths
+  set(OGRE2_INCLUDE_DIRS "/opt/ros/jazzy/opt/gz_ogre_next_vendor/include/OGRE-Next")
+  set(OGRE2_LIBRARY_DIRS "/opt/ros/jazzy/opt/gz_ogre_next_vendor/lib")
+  include_directories(${OGRE2_INCLUDE_DIRS})
+  include_directories("${OGRE2_INCLUDE_DIRS}/Hlms/Common")
+  link_directories(${OGRE2_LIBRARY_DIRS})
 
-gz_find_package(GzOGRE VERSION 1.9.0
-  COMPONENTS ${gz_ogre_components}
-  REQUIRED_BY ogre
-  PRIVATE_FOR ogre)
+  # Manually create GzOGRE2 target
+  add_library(GzOGRE2::GzOGRE2 INTERFACE IMPORTED)
+  set_target_properties(GzOGRE2::GzOGRE2 PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${OGRE2_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${OGRE2_LIBRARY_DIRS}/libOgreNextMain.so"
+  )
 
-#--------------------------------------
-# Find OGRE2: first try to find OGRE2 built with PlanarReflections support and
-# fallback to look for OGRE2 without it. Both seems to works for gz-rendering.
-# See https://github.com/gazebosim/gz-rendering/issues/597
-gz_find_package(GzOGRE2 VERSION 2.3
+  # Manually create other OGRE2 components targets
+  add_library(GzOGRE2::HlmsPbs INTERFACE IMPORTED)
+  set_target_properties(GzOGRE2::HlmsPbs PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${OGRE2_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${OGRE2_LIBRARY_DIRS}/libOgreNextHlmsPbs.so"
+  )
+
+  add_library(GzOGRE2::HlmsUnlit INTERFACE IMPORTED)
+  set_target_properties(GzOGRE2::HlmsUnlit PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${OGRE2_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${OGRE2_LIBRARY_DIRS}/libOgreNextHlmsUnlit.so"
+  )
+
+  add_library(GzOGRE2::Overlay INTERFACE IMPORTED)
+  set_target_properties(GzOGRE2::Overlay PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${OGRE2_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${OGRE2_LIBRARY_DIRS}/libOgreNextOverlay.so"
+  )
+
+  add_library(GzOGRE2::PlanarReflections INTERFACE IMPORTED)
+  set_target_properties(GzOGRE2::PlanarReflections PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${OGRE2_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${OGRE2_LIBRARY_DIRS}/libOgreNextPlanarReflections.so"
+  )
+else()
+  # Find OGRE
+  list(APPEND gz_ogre_components "RTShaderSystem" "Terrain" "Overlay" "Paging")
+
+  gz_find_package(GzOGRE VERSION 1.9.0
+    COMPONENTS ${gz_ogre_components}
+    REQUIRED_BY ogre
+    PRIVATE_FOR ogre)
+  #--------------------------------------
+  # Find OGRE2: first try to find OGRE2 built with PlanarReflections support and
+  # fallback to look for OGRE2 without it. Both seems to works for gz-rendering.
+  # See https://github.com/gazebosim/gz-rendering/issues/597
+  gz_find_package(GzOGRE2 VERSION 2.3
     COMPONENTS HlmsPbs HlmsUnlit Overlay PlanarReflections
     PRIVATE_FOR ogre2
     QUIET)
 
-if ("${OGRE2-PlanarReflections}" STREQUAL "OGRE2-PlanarReflections-NOTFOUND")
-  message(STATUS "PlanarReflections component was not found. Try looking without it:")
-  gz_find_package(GzOGRE2 VERSION 2.3
-    COMPONENTS HlmsPbs HlmsUnlit Overlay
-    REQUIRED_BY ogre2
-    PRIVATE_FOR ogre2)
-endif()
+  if ("${OGRE2-PlanarReflections}" STREQUAL "OGRE2-PlanarReflections-NOTFOUND")
+    message(STATUS "PlanarReflections component was not found. Try looking without it:")
+    gz_find_package(GzOGRE2 VERSION 2.3
+      COMPONENTS HlmsPbs HlmsUnlit Overlay
+      REQUIRED_BY ogre2
+      PRIVATE_FOR ogre2)
+  endif()
 
-if (OGRE2_FOUND)
-  set(HAVE_OGRE2 TRUE)
+  if (OGRE2_FOUND)
+    set(HAVE_OGRE2 TRUE)
+  endif()
 endif()
-
 #####################################
+
 # Define compile-time default variables
 if(MSVC)
   set(GZ_RENDERING_PLUGIN_PATH ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR})
