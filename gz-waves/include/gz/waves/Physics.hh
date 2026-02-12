@@ -261,6 +261,9 @@ class HydrodynamicsParameters
   /// \param[in] _sdf   A reference to a SDF element.
   void SetFromSDF(sdf::Element& _sdf);
 
+  /// \brief Set random parameters from a SDF tree.
+  void SetRandomFromSDF(sdf::Element& _sdf);
+
   /// \brief Print a summary of the hydrodynamics parameters to the msg stream.
   void DebugPrint() const;
 

@@ -44,6 +44,8 @@
 #include "gz/waves/Wavefield.hh"
 #include "gz/waves/WavefieldSampler.hh"
 
+#include <random>
+
 namespace gz
 {
 namespace waves
@@ -384,6 +386,19 @@ class HydrodynamicsParametersPrivate
 
   // Reference speed for the pressure drag calculation
   double vRDrag;
+
+  static constexpr double defaultDampingDistMin = 1.0E-8;
+  static constexpr double defaultDampingDistMax = 1.0E-3;
+  static constexpr double defaultCPDragDistMin = 20.0;
+  static constexpr double defaultCPDragDistMax = 400.0;
+  static constexpr double defaultCSDragMin = 50.0;
+  static constexpr double defaultCSDragMax = 800.0;
+  static constexpr double defaultFPDragMin = 0.2;
+  static constexpr double defaultFPDragMax = 0.7;
+  static constexpr double defaultFSDragMin = 0.2;
+  static constexpr double defaultFSDragMax = 0.7;
+  static constexpr double defaultVRDragMin = 0.5;
+  static constexpr double defaultVRDragMax = 2.0;
 };
 
 //////////////////////////////////////////////////
@@ -518,7 +533,13 @@ void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
 //////////////////////////////////////////////////
 void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
 {
-  this->data->dampingOn      = Utilities::SdfParamBool(
+  if (_sdf.HasElement("randomize"))
+  {
+    this->SetRandomFromSDF(_sdf);
+    return;
+  }
+
+  this->data->dampingOn = Utilities::SdfParamBool(
       _sdf,  "damping_on",       this->data->dampingOn);
   this->data->viscousDragOn  = Utilities::SdfParamBool(
       _sdf,  "viscous_drag_on",  this->data->viscousDragOn);
@@ -547,6 +568,51 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
       _sdf, "fSDrag",   this->data->fSDrag);
   this->data->vRDrag  = Utilities::SdfParamDouble(
       _sdf, "vRDrag",   this->data->vRDrag);
+}
+
+void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
+  // Seed the random number engine using the current time
+  unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+  std::mt19937 engine(seed); // Using the Mersenne Twister 32-bit engine
+
+  this->data->dampingOn = true;
+  this->data->viscousDragOn  = true;
+  this->data->pressureDragOn = true;
+
+  std::uniform_real_distribution<double> dampinDist(
+    Utilities::SdfParamDouble(_sdf, "dampingDistMin", this->data->defaultDampingDistMin),
+    Utilities::SdfParamDouble(_sdf, "dampingDistMax", this->data->defaultDampingDistMax));
+  this->data->cDampL1 = dampinDist(engine);
+  this->data->cDampL2 = dampinDist(engine);
+  this->data->cDampR1 = dampinDist(engine);
+  this->data->cDampR2 = dampinDist(engine);
+
+  std::uniform_real_distribution<double> cPDragDist(
+    Utilities::SdfParamDouble(_sdf, "cPDragDistMin", this->data->defaultCPDragDistMin),
+    Utilities::SdfParamDouble(_sdf, "cPDragDistMax", this->data->defaultCPDragDistMax));
+  this->data->cPDrag1 = cPDragDist(engine);
+  this->data->cPDrag2 = cPDragDist(engine);
+
+  std::uniform_real_distribution<double> fPDragDist(
+    Utilities::SdfParamDouble(_sdf, "fPDragDistMin", this->data->defaultFPDragMin),
+    Utilities::SdfParamDouble(_sdf, "fPDragDistMax", this->data->defaultFPDragMax));
+  this->data->fPDrag = fPDragDist(engine);
+
+  std::uniform_real_distribution<double> cSDragDist(
+    Utilities::SdfParamDouble(_sdf, "cSDragDistMin", this->data->defaultCSDragMin),
+    Utilities::SdfParamDouble(_sdf, "cSDragDistMax", this->data->defaultCSDragMax));
+  this->data->cSDrag1 = cPDragDist(engine);
+  this->data->cSDrag2 = cSDragDist(engine);
+
+  std::uniform_real_distribution<double> fSDragDist(
+    Utilities::SdfParamDouble(_sdf, "fSDragDistMin", this->data->defaultFSDragMin),
+    Utilities::SdfParamDouble(_sdf, "fSDragDistMax", this->data->defaultFSDragMax));
+  this->data->fSDrag = fSDragDist(engine);
+
+  std::uniform_real_distribution<double> vRDragDist(
+    Utilities::SdfParamDouble(_sdf, "vRDragDistMin", this->data->defaultVRDragMin),
+    Utilities::SdfParamDouble(_sdf, "vRDragDistMax", this->data->defaultVRDragMax));
+  this->data->vRDrag = vRDragDist(engine);
 }
 
 //////////////////////////////////////////////////
