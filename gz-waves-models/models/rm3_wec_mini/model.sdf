@@ -36,7 +36,7 @@
         <pose>0 0 -10.2 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>models://rm3_wec/meshes/plate.stl</uri>
+            <uri>package://gz_waves_models/models/rm3_wec/meshes/plate.stl</uri>
             <scale>0.1 0.1 1</scale>
             </mesh>
           </geometry>
@@ -86,7 +86,7 @@
         <pose>0 0 -0.0225 0 0 0</pose>
         <geometry>
           <mesh>
-            <uri>models://rm3_wec/meshes/float.stl</uri>
+            <uri>package://gz_waves_models/models/rm3_wec/meshes/float.stl</uri>
             <scale>0.1 0.1 0.1</scale>
           </mesh>
         </geometry>

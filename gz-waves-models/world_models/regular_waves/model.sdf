@@ -23,7 +23,7 @@
       <visual name="visual">
         <geometry>
           <mesh>
-            <uri>models://waves/materials/mesh_L256m_N256.dae</uri>
+            <uri>package://gz_waves_models/models/waves/materials/mesh_L256m_N256.dae</uri>
           </mesh>
         </geometry>
         <material>
@@ -32,9 +32,9 @@
           <specular>0.7 0.7 0.7 0.92</specular>
           <pbr>
             <metal>
-              <albedo_map>models://waves/materials/water.jpg</albedo_map>
-              <normal_map>models://waves/materials/wave_normals.dds</normal_map>
-              <environment_map>models://waves/materials/skybox_lowres.dds</environment_map>
+              <albedo_map>package://gz_waves_models/models/waves/materials/water.jpg</albedo_map>
+              <normal_map>package://gz_waves_models/models/waves/materials/wave_normals.dds</normal_map>
+              <environment_map>package://gz_waves_models/models/waves/materials/skybox_lowres.dds</environment_map>
               <roughness>0.3</roughness>
               <metalness>0.1</metalness>
             </metal>
@@ -60,8 +60,8 @@
 
           <!-- TODO: should not be required if using PBS shader -->
           <shader language="metal">
-            <vertex>models://waves/materials/waves_vs.metal</vertex>
-            <fragment>models://waves/materials/waves_fs.metal</fragment>
+            <vertex>package://gz_waves_models/models/waves/materials/waves_vs.metal</vertex>
+            <fragment>package://gz_waves_models/models/waves/materials/waves_fs.metal</fragment>
           </shader>
 
         </plugin>
