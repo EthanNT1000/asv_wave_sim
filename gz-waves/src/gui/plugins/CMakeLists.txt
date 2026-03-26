@@ -1,1 +1,1 @@
-# add_subdirectory(waves_control)
+add_subdirectory(waves_control)
