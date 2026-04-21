@@ -513,7 +513,7 @@ void Hydrodynamics::Configure(const Entity& _entity,
   if (_sdf->HasElement("influxDBUdp")) {
     auto sdfInflux = _sdf->GetElementImpl("influxDBUdp");
     std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
-    int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8084);
+    int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8094);
     this->dataPtr->triangleMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
 
     this->dataPtr->influxAddr.sin_family = AF_INET;
@@ -1465,19 +1465,20 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo &_info,
   for (auto&& hd : this->hydroData) {
     for (size_t j = 0; j < hd->linkMeshes.size(); ++j)
     {
+      uint32_t index = 0;
       for (auto&& prop : hd->hydrodynamics[j]->GetTriangleProperties()) {
 
-        std::string line = "avs_wave_sim_triangles,link=" +
+        std::string line = triangleMeasurement + ",link=" +
           _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data()
-          +",index=" + std::to_string(prop.index) +
-          " normal x=" + std::to_string(prop.normal.x()) +
-          ",normal y=" + std::to_string(prop.normal.y()) +
-          ",normal z=" + std::to_string(prop.normal.z()) +
+          +",index=" + std::to_string(index++) +
+          " normal_x=" + std::to_string(prop.normal.x()) +
+          ",normal_y=" + std::to_string(prop.normal.y()) +
+          ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
-          ",submerged_area=" + std::to_string(prop.subArea) +
+          ",submerged_area=" + (isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
           " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
 
-        ssize_t sentBytes = sendto(this->influxUdpSockfd, line.c_str(), line.size(), 0,
+        sendto(this->influxUdpSockfd, line.c_str(), line.size(), 0,
             (const struct sockaddr *)&this->influxAddr, sizeof(this->influxAddr));
       }
     }
