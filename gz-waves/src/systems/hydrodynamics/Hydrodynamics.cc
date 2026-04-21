@@ -63,6 +63,12 @@
 
 #include "Collision.hh"
 
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
 namespace gz
 {
 namespace sim
@@ -342,7 +348,7 @@ class HydrodynamicsPrivate
   public: bool InitMarkers(EntityComponentManager &_ecm);
   public: void InitWaterPatchMarkers(EntityComponentManager &_ecm);
   public: void InitWaterlineMarkers(EntityComponentManager &_ecm);
-  public: void InitUnderwaterSurfaceMarkers(EntityComponentManager &_ecm);
+  public: void InitUnderwaterSurfaceMarkers(EntityComponentManager& _ecm);
 
   public: void UpdateMarkers(const UpdateInfo &_info,
                              EntityComponentManager &_ecm);
@@ -358,6 +364,9 @@ class HydrodynamicsPrivate
   ///
   /// \param[in] _msg Wave parameters message.
   public: void OnWaveMarkersMsg(const gz::msgs::Param &_msg);
+
+  public: void SendDataToInfluxDB(const UpdateInfo &_info,
+    EntityComponentManager &_ecm);
 
   /// \brief Name of the world
   public: std::string worldName;
@@ -401,6 +410,11 @@ class HydrodynamicsPrivate
   /// \brief Transport node for wave marker messages
   public: transport::Node node;
 
+  public: bool initializedInfluxUdp{false};
+  public: std::string triangleMeasurement;
+  public: int32_t influxUdpSockfd = -1;
+  public: struct sockaddr_in influxAddr {};
+
   ////////// END HYDRODYNAMICS PLUGIN
 
 };
@@ -417,10 +431,10 @@ Hydrodynamics::~Hydrodynamics()
 }
 
 //////////////////////////////////////////////////
-void Hydrodynamics::Configure(const Entity &_entity,
-    const std::shared_ptr<const sdf::Element> &_sdf,
-    EntityComponentManager &_ecm,
-    EventManager &/*_eventMgr*/)
+void Hydrodynamics::Configure(const Entity& _entity,
+  const std::shared_ptr<const sdf::Element>& _sdf,
+  EntityComponentManager& _ecm,
+  EventManager&/*_eventMgr*/)
 {
   GZ_PROFILE("Hydrodynamics::Configure");
 
@@ -430,14 +444,14 @@ void Hydrodynamics::Configure(const Entity &_entity,
   if (this->dataPtr->worldName.empty())
   {
     _ecm.Each<components::World, components::Name>(
-      [&](const Entity &,
-          const components::World *,
-          const components::Name *_name) -> bool
-      {
-        // Assume there's only one world
-        this->dataPtr->worldName = _name->Data();
-        return false;
-      });
+      [&](const Entity&,
+        const components::World*,
+        const components::Name* _name) -> bool
+    {
+      // Assume there's only one world
+      this->dataPtr->worldName = _name->Data();
+      return false;
+    });
   }
 
   // Capture the model entity
@@ -445,7 +459,7 @@ void Hydrodynamics::Configure(const Entity &_entity,
   if (!this->dataPtr->model.Valid(_ecm))
   {
     gzerr << "The Hydrodynamics system should be attached to a model entity. "
-           << "Failed to initialise." << "\n";
+      << "Failed to initialise." << "\n";
     return;
   }
   this->dataPtr->sdf = _sdf->Clone();
@@ -453,7 +467,7 @@ void Hydrodynamics::Configure(const Entity &_entity,
   // Subscribe to wave marker updates
   std::string topic("/world/" + this->dataPtr->worldName + "/waves/markers");
   this->dataPtr->node.Subscribe(
-      topic, &HydrodynamicsPrivate::OnWaveMarkersMsg, this->dataPtr.get());
+    topic, &HydrodynamicsPrivate::OnWaveMarkersMsg, this->dataPtr.get());
 
   // Empty sdf element used as a placeholder for missing elements
   auto sdfEmpty = std::make_shared<sdf::Element>();
@@ -462,12 +476,12 @@ void Hydrodynamics::Configure(const Entity &_entity,
   if (this->dataPtr->sdf->HasElement("enable"))
   {
     for (auto enableElem = this->dataPtr->sdf->FindElement("enable");
-        enableElem != nullptr;
-        enableElem = enableElem->GetNextElement("enable"))
+      enableElem != nullptr;
+      enableElem = enableElem->GetNextElement("enable"))
     {
       this->dataPtr->enabled.insert(enableElem->Get<std::string>());
       gzmsg << "Hydrodynamics enable: "
-          << enableElem->Get<std::string>() << "\n";
+        << enableElem->Get<std::string>() << "\n";
     }
   }
 
@@ -486,17 +500,38 @@ void Hydrodynamics::Configure(const Entity &_entity,
   {
     sdf::ElementPtr sdfMarkers = _sdf->GetElementImpl("markers");
     this->dataPtr->updateRate =
-        waves::Utilities::SdfParamDouble(*sdfMarkers, "update_rate", 30.0);
+      waves::Utilities::SdfParamDouble(*sdfMarkers, "update_rate", 30.0);
     this->dataPtr->showWaterPatch =
-        waves::Utilities::SdfParamBool(*sdfMarkers, "water_patch", false);
+      waves::Utilities::SdfParamBool(*sdfMarkers, "water_patch", false);
     this->dataPtr->showWaterline =
-        waves::Utilities::SdfParamBool(*sdfMarkers, "waterline", false);
+      waves::Utilities::SdfParamBool(*sdfMarkers, "waterline", false);
     this->dataPtr->showUnderwaterSurface =
-        waves::Utilities::SdfParamBool(
-              *sdfMarkers, "underwater_surface", false);
+      waves::Utilities::SdfParamBool(
+        *sdfMarkers, "underwater_surface", false);
+  }
+
+  if (_sdf->HasElement("influxDBUdp")) {
+    auto sdfInflux = _sdf->GetElementImpl("influxDBUdp");
+    std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
+    int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8084);
+    this->dataPtr->triangleMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
+
+    this->dataPtr->influxAddr.sin_family = AF_INET;
+    this->dataPtr->influxAddr.sin_port = htons(port);
+
+    // Convert IP address string to binary form
+    if (inet_pton(AF_INET, ip.c_str(), &this->dataPtr->influxAddr.sin_addr) <= 0) {
+      gzerr << "Invalid address/Address not supported" << std::endl;
+      return;
+    }
+
+    this->dataPtr->influxUdpSockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (this->dataPtr->influxUdpSockfd < 0) {
+        gzerr << "Could not create socket" << std::endl;
+        return;
+    }
   }
 }
-
 ///////////////////////////////////////////////////
 void Hydrodynamics::PreUpdate(
   const gz::sim::UpdateInfo &_info,
@@ -753,6 +788,7 @@ void HydrodynamicsPrivate::Update(const UpdateInfo &_info,
 {
   this->UpdatePhysics(_info, _ecm);
   this->UpdateMarkers(_info, _ecm);
+  this->SendDataToInfluxDB(_info, _ecm);
 }
 
 //////////////////////////////////////////////////
@@ -1418,6 +1454,36 @@ void HydrodynamicsPrivate::DeleteUnderwaterSurfaceMarkers()
     }
   }
 }
+
+//////////////////////////////////////////////////
+void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo &_info,
+    EntityComponentManager &_ecm) {
+  if (this->influxUdpSockfd < 0) {
+    return;
+  }
+
+  for (auto&& hd : this->hydroData) {
+    for (size_t j = 0; j < hd->linkMeshes.size(); ++j)
+    {
+      for (auto&& prop : hd->hydrodynamics[j]->GetTriangleProperties()) {
+
+        std::string line = "avs_wave_sim_triangles,link=" +
+          _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data()
+          +",index=" + std::to_string(prop.index) +
+          " normal x=" + std::to_string(prop.normal.x()) +
+          ",normal y=" + std::to_string(prop.normal.y()) +
+          ",normal z=" + std::to_string(prop.normal.z()) +
+          ",area=" + std::to_string(prop.area) +
+          ",submerged_area=" + std::to_string(prop.subArea) +
+          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+
+        ssize_t sentBytes = sendto(this->influxUdpSockfd, line.c_str(), line.size(), 0,
+            (const struct sockaddr *)&this->influxAddr, sizeof(this->influxAddr));
+      }
+    }
+  }
+}
+
 
 //////////////////////////////////////////////////
 void HydrodynamicsPrivate::OnWaveMarkersMsg(const gz::msgs::Param &_msg)

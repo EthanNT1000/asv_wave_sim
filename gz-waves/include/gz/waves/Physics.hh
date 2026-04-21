@@ -54,6 +54,8 @@
 #include <gz/msgs.hh>
 #include <sdf/sdf.hh>
 
+#include "Types.hh"
+
 namespace gz
 {
 namespace waves
@@ -276,7 +278,35 @@ typedef std::shared_ptr<HydrodynamicsParameters> HydrodynamicsParametersPtr;
 
 //////////////////////////////////////////////////
 /// \internal Hold triangle data for hydrodynamics calculations.
-class TriangleProperties;
+class TriangleProperties
+{
+ public:
+  TriangleProperties() :
+    index(0),
+    normal(CGAL::NULL_VECTOR),
+    area(std::numeric_limits<double>::signaling_NaN()),
+    subArea(std::numeric_limits<double>::signaling_NaN()),
+    vh(CGAL::ORIGIN),
+    vm(CGAL::ORIGIN),
+    vl(CGAL::ORIGIN),
+    hh(std::numeric_limits<double>::signaling_NaN()),
+    hm(std::numeric_limits<double>::signaling_NaN()),
+    hl(std::numeric_limits<double>::signaling_NaN())
+  {
+  }
+
+  Index index;                        // index to the original triangle
+  cgal::Vector3 normal;               // triangle normal
+  double area;                        // area
+  double subArea;                     // submerged area
+  std::array<double, 3> heightMap;    // heightmap[3] - unsorted
+  cgal::Point3 vh;                    // high vertex
+  cgal::Point3 vm;                    // mid vertex
+  cgal::Point3 vl;                    // low vertex
+  double hh;                          // high vertex height
+  double hm;                          // mid vertex height
+  double hl;                          // low vertex height
+};
 
 /// \internal
 /// \brief Class to hold private data for Hydrodynamics.
@@ -331,6 +361,8 @@ class Hydrodynamics
   ///
   /// \return A vector containing the trianges that are under water.
   const std::vector<cgal::Triangle>& GetSubmergedTriangles() const;
+
+  const std::vector<TriangleProperties>& GetTriangleProperties() const;
 
  private:
   /// \internal

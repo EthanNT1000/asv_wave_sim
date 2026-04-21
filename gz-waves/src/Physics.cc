@@ -635,38 +635,6 @@ void HydrodynamicsParameters::DebugPrint() const
 }
 
 //////////////////////////////////////////////////
-
-class TriangleProperties
-{
- public:
-  TriangleProperties() :
-    index(0),
-    normal(CGAL::NULL_VECTOR),
-    area(std::numeric_limits<double>::signaling_NaN()),
-    subArea(std::numeric_limits<double>::signaling_NaN()),
-    vh(CGAL::ORIGIN),
-    vm(CGAL::ORIGIN),
-    vl(CGAL::ORIGIN),
-    hh(std::numeric_limits<double>::signaling_NaN()),
-    hm(std::numeric_limits<double>::signaling_NaN()),
-    hl(std::numeric_limits<double>::signaling_NaN())
-  {
-  }
-
-  Index index;                        // index to the original triangle
-  cgal::Vector3 normal;               // triangle normal
-  double area;                        // area
-  double subArea;                     // submerged area
-  std::array<double, 3> heightMap;    // heightmap[3] - unsorted
-  cgal::Point3 vh;                    // high vertex
-  cgal::Point3 vm;                    // mid vertex
-  cgal::Point3 vl;                    // low vertex
-  double hh;                          // high vertex height
-  double hm;                          // mid vertex height
-  double hl;                          // low vertex height
-};
-
-//////////////////////////////////////////////////
 void DebugPrint(const TriangleProperties& props)
 {
   gzmsg << "index:        " << props.index << "\n";
@@ -865,6 +833,11 @@ const std::vector<cgal::Line>& Hydrodynamics::GetWaterline() const
 const std::vector<cgal::Triangle>& Hydrodynamics::GetSubmergedTriangles() const
 {
   return this->data->submergedTriangles;
+}
+
+const std::vector<TriangleProperties>& Hydrodynamics::GetTriangleProperties() const
+{
+  return this->data->triangleProperties;
 }
 
 //////////////////////////////////////////////////
