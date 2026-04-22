@@ -650,46 +650,6 @@ void DebugPrint(const TriangleProperties& props)
 }
 
 //////////////////////////////////////////////////
-class SubmergedTriangleProperties
-{
- public:
-  SubmergedTriangleProperties() :
-    index(0),
-    normal(CGAL::NULL_VECTOR),
-    centroid(CGAL::ORIGIN),
-    xr(CGAL::NULL_VECTOR),
-    area(std::numeric_limits<double>::signaling_NaN()),
-    vp(CGAL::NULL_VECTOR),
-    up(CGAL::NULL_VECTOR),
-    cosTheta(std::numeric_limits<double>::signaling_NaN()),
-    vn(CGAL::NULL_VECTOR),
-    vt(CGAL::NULL_VECTOR),
-    ut(CGAL::NULL_VECTOR),
-    uf(CGAL::NULL_VECTOR),
-    vf(CGAL::NULL_VECTOR)
-  {
-  }
-
-  Index index;            // index to the original triangle
-  cgal::Vector3 normal;   // triangle normal
-  cgal::Point3 centroid;  // triangle centroid = r
-  cgal::Vector3 xr;       // xr = centroid - CoM = (r - x)
-  double area;            // area
-  cgal::Vector3 vp;       // point velocity vp = v + omega x r,
-                                  // where r = centroid - CoM
-  cgal::Vector3 up;       // normalized point velocity.
-  double cosTheta;        // cos[theta] = up . normal
-  cgal::Vector3 vn;       // point velocity normal to surface
-                                  // vn = (vp . normal) normal
-  cgal::Vector3 vt;       // point velocity tangential to surface
-                                  // vt = vp - vn
-  cgal::Vector3 ut;       // normalized tangential point velocity.
-  cgal::Vector3 uf;       // direction of tangential flow.
-                                  // uf = - vt / ||vt|| = - ut
-  cgal::Vector3 vf;       // tangential flow vf = ||vp|| uf
-};
-
-//////////////////////////////////////////////////
 void DebugPrint(const SubmergedTriangleProperties& props)
 {
   gzmsg << "index:        " << props.index << "\n";
@@ -838,6 +798,11 @@ const std::vector<cgal::Triangle>& Hydrodynamics::GetSubmergedTriangles() const
 const std::vector<TriangleProperties>& Hydrodynamics::GetTriangleProperties() const
 {
   return this->data->triangleProperties;
+}
+
+const std::vector<SubmergedTriangleProperties>& Hydrodynamics::GetSubmergedTriangleProperties() const
+{
+  return this->data->submergedTriangleProperties;
 }
 
 //////////////////////////////////////////////////

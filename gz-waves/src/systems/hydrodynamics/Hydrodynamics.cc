@@ -411,7 +411,7 @@ class HydrodynamicsPrivate
   public: transport::Node node;
 
   public: bool initializedInfluxUdp{false};
-  public: std::string triangleMeasurement;
+  public: std::string influxDBMeasurement;
   public: int32_t influxUdpSockfd = -1;
   public: struct sockaddr_in influxAddr {};
 
@@ -514,7 +514,7 @@ void Hydrodynamics::Configure(const Entity& _entity,
     auto sdfInflux = _sdf->GetElementImpl("influxDBUdp");
     std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
     int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8094);
-    this->dataPtr->triangleMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
+    this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
 
     this->dataPtr->influxAddr.sin_family = AF_INET;
     this->dataPtr->influxAddr.sin_port = htons(port);
@@ -1467,16 +1467,57 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo &_info,
     {
       uint32_t index = 0;
       for (auto&& prop : hd->hydrodynamics[j]->GetTriangleProperties()) {
-
-        std::string line = triangleMeasurement + ",link=" +
-          _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data()
-          +",index=" + std::to_string(index++) +
+        std::string line = influxDBMeasurement + "_triangle,link=" +
+          _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data() +
+          ",index=" + std::to_string(index++) +
           " normal_x=" + std::to_string(prop.normal.x()) +
           ",normal_y=" + std::to_string(prop.normal.y()) +
           ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
           ",submerged_area=" + (isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
-          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "\n";
+
+        sendto(this->influxUdpSockfd, line.c_str(), line.size(), 0,
+            (const struct sockaddr *)&this->influxAddr, sizeof(this->influxAddr));
+      }
+      index = 0;
+      for (auto&& subProp : hd->hydrodynamics[j]->GetSubmergedTriangleProperties()) {
+        std::string line = influxDBMeasurement + "_submerged_triangle,link=" +
+          _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data() +
+          ",index=" + std::to_string(index++) +
+          " normal_x=" + (isnan(subProp.normal.x()) ? "0.0" : std::to_string(subProp.normal.x())) +
+          ",normal_y=" + (isnan(subProp.normal.y()) ? "0.0" : std::to_string(subProp.normal.y())) +
+          ",normal_z=" + (isnan(subProp.normal.z()) ? "0.0" : std::to_string(subProp.normal.z())) +
+          ",centroid_x=" + (isnan(subProp.centroid.x()) ? "0.0" : std::to_string(subProp.centroid.x())) +
+          ",centroid_y=" + (isnan(subProp.centroid.y()) ? "0.0" : std::to_string(subProp.centroid.y())) +
+          ",centroid_z=" + (isnan(subProp.centroid.z()) ? "0.0" : std::to_string(subProp.centroid.z())) +
+          ",xr_x=" + (isnan(subProp.xr.x()) ? "0.0" : std::to_string(subProp.xr.x())) +
+          ",xr_y=" + (isnan(subProp.xr.y()) ? "0.0" : std::to_string(subProp.xr.y())) +
+          ",xr_z=" + (isnan(subProp.xr.z()) ? "0.0" : std::to_string(subProp.xr.z())) +
+          ",area=" + (isnan(subProp.area) ? "0.0" : std::to_string(subProp.area)) +
+          ",vp_x=" + (isnan(subProp.vp.x()) ? "0.0" : std::to_string(subProp.vp.x())) +
+          ",vp_y=" + (isnan(subProp.vp.y()) ? "0.0" : std::to_string(subProp.vp.y())) +
+          ",vp_z=" + (isnan(subProp.vp.z()) ? "0.0" : std::to_string(subProp.vp.z())) +
+          ",up_x=" + (isnan(subProp.up.x()) ? "0.0" : std::to_string(subProp.up.x())) +
+          ",up_y=" + (isnan(subProp.up.y()) ? "0.0" : std::to_string(subProp.up.y())) +
+          ",up_z=" + (isnan(subProp.up.z()) ? "0.0" : std::to_string(subProp.up.z())) +
+          ",cos_theta=" + (isnan(subProp.cosTheta) ? "0.0" : std::to_string(subProp.cosTheta)) +
+          ",vn_x=" + (isnan(subProp.vn.x()) ? "0.0" : std::to_string(subProp.vn.x())) +
+          ",vn_y=" + (isnan(subProp.vn.y()) ? "0.0" : std::to_string(subProp.vn.y())) +
+          ",vn_z=" + (isnan(subProp.vn.z()) ? "0.0" : std::to_string(subProp.vn.z())) +
+          ",vt_x=" + (isnan(subProp.vt.x()) ? "0.0" : std::to_string(subProp.vt.x())) +
+          ",vt_y=" + (isnan(subProp.vt.y()) ? "0.0" : std::to_string(subProp.vt.y())) +
+          ",vt_z=" + (isnan(subProp.vt.z()) ? "0.0" : std::to_string(subProp.vt.z())) +
+          ",ut_x=" + (isnan(subProp.ut.x()) ? "0.0" : std::to_string(subProp.ut.x())) +
+          ",ut_y=" + (isnan(subProp.ut.y()) ? "0.0" : std::to_string(subProp.ut.y())) +
+          ",ut_z=" + (isnan(subProp.ut.z()) ? "0.0" : std::to_string(subProp.ut.z())) +
+          ",uf_x=" + (isnan(subProp.uf.x()) ? "0.0" : std::to_string(subProp.uf.x())) +
+          ",uf_y=" + (isnan(subProp.uf.y()) ? "0.0" : std::to_string(subProp.uf.y())) +
+          ",uf_z=" + (isnan(subProp.uf.z()) ? "0.0" : std::to_string(subProp.uf.z())) +
+          ",vf_x=" + (isnan(subProp.vf.x()) ? "0.0" : std::to_string(subProp.vf.x())) +
+          ",vf_y=" + (isnan(subProp.vf.y()) ? "0.0" : std::to_string(subProp.vf.y())) +
+          ",vf_z=" + (isnan(subProp.vf.z()) ? "0.0" : std::to_string(subProp.vf.z())) +
+          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "\n";
 
         sendto(this->influxUdpSockfd, line.c_str(), line.size(), 0,
             (const struct sockaddr *)&this->influxAddr, sizeof(this->influxAddr));
