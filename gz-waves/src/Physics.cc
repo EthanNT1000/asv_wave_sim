@@ -888,11 +888,10 @@ void Hydrodynamics::UpdateSubmergedTriangles()
       triProps.heightMap[it.second] = -this->data->depths[*it.first];
     }
 
-    this->data->triangleProperties.push_back(triProps);
-
     // Populate the submerged sub-triangles
     this->PopulateSubmergedTriangle(triangle, triProps);
 
+    this->data->triangleProperties.push_back(triProps);
     // @DEBUG_INFO
     // DebugPrint(triangle);
     // DebugPrint(triProps);
