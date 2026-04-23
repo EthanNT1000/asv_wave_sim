@@ -1479,7 +1479,7 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
           ",submerged_area=" + (isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
-          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "\n";
+          " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
       }
 
@@ -1520,7 +1520,7 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",vf_x=" + (isnan(subProp.vf.x()) ? "0.0" : std::to_string(subProp.vf.x())) +
           ",vf_y=" + (isnan(subProp.vf.y()) ? "0.0" : std::to_string(subProp.vf.y())) +
           ",vf_z=" + (isnan(subProp.vf.z()) ? "0.0" : std::to_string(subProp.vf.z())) +
-          " " + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + "\n";
+          " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
       }
     }
