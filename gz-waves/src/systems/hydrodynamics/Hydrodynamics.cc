@@ -412,6 +412,8 @@ public: std::recursive_mutex mutex;
       /// \brief Transport node for wave marker messages
 public: transport::Node node;
 
+public: double influxDBUpdateRate = 1000.0;
+public: double influxPrevTime;
 public: bool initializedInfluxUdp { false };
 public: std::string influxDBMeasurement;
 public: int32_t influxUdpSockfd = -1;
@@ -517,6 +519,9 @@ void Hydrodynamics::Configure(const Entity& _entity,
     std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
     int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8094);
     this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
+    this->dataPtr->influxDBUpdateRate =
+      waves::Utilities::SdfParamDouble(*sdfInflux, "update_rate", 1000.0);
+
 
     this->dataPtr->influxAddr.sin_family = AF_INET;
     this->dataPtr->influxAddr.sin_port = htons(port);
@@ -1460,6 +1465,13 @@ void HydrodynamicsPrivate::DeleteUnderwaterSurfaceMarkers()
 //////////////////////////////////////////////////
 void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm) {
+  double currentTime = std::chrono::duration<double>(_info.simTime).count();
+  if ((currentTime - this->influxPrevTime) < (1.0 / this->influxDBUpdateRate))
+  {
+    return;
+  }
+  this->influxPrevTime = currentTime;
+
   std::stringstream stream {};
   auto now = std::chrono::system_clock::now().time_since_epoch().count();
   if (this->influxUdpSockfd < 0) {
@@ -1479,6 +1491,7 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
           ",submerged_area=" + (isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
+          ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
       }
@@ -1520,6 +1533,7 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",vf_x=" + (isnan(subProp.vf.x()) ? "0.0" : std::to_string(subProp.vf.x())) +
           ",vf_y=" + (isnan(subProp.vf.y()) ? "0.0" : std::to_string(subProp.vf.y())) +
           ",vf_z=" + (isnan(subProp.vf.z()) ? "0.0" : std::to_string(subProp.vf.z())) +
+          ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
       }
