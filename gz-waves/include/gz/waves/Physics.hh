@@ -55,6 +55,7 @@
 #include <sdf/sdf.hh>
 
 #include "Types.hh"
+#include "gz/waves/WaterCurrentGrid.hh"
 
 namespace gz
 {
@@ -253,6 +254,18 @@ class HydrodynamicsParameters
   /// \brief The reference speed for pressure drag.
   double VRDrag() const;
 
+  /// \brief True if foil lift is enabled.
+  bool FoilLiftOn() const;
+
+  /// \brief The lift coefficient scale factor.
+  double CLift1() const;
+
+  /// \brief The lift coefficient quadratic term.
+  double CLift2() const;
+
+  /// \brief Get a reference to the water current grid.
+  const WaterCurrentGrid& GetWaterCurrentGrid() const;
+
   /// \brief Set the parameters from a message.
   ///
   /// \param[in] _msg   The message containing the hydrodynamics parameters.
@@ -268,6 +281,8 @@ class HydrodynamicsParameters
 
   /// \brief Print a summary of the hydrodynamics parameters to the msg stream.
   void DebugPrint() const;
+
+  const double BOTTOM_THRESHOLD = 0.3;  // cos(72°) — within 72° of vertical up
 
  private:
   /// \internal Private implementation.
@@ -310,7 +325,7 @@ class TriangleProperties
 
 class SubmergedTriangleProperties
 {
- public:
+public:
   SubmergedTriangleProperties() :
     index(0),
     normal(CGAL::NULL_VECTOR),
@@ -334,17 +349,30 @@ class SubmergedTriangleProperties
   cgal::Vector3 xr;       // xr = centroid - CoM = (r - x)
   double area;            // area
   cgal::Vector3 vp;       // point velocity vp = v + omega x r,
-                                  // where r = centroid - CoM
+  // where r = centroid - CoM
   cgal::Vector3 up;       // normalized point velocity.
   double cosTheta;        // cos[theta] = up . normal
   cgal::Vector3 vn;       // point velocity normal to surface
-                                  // vn = (vp . normal) normal
+  // vn = (vp . normal) normal
   cgal::Vector3 vt;       // point velocity tangential to surface
-                                  // vt = vp - vn
+  // vt = vp - vn
   cgal::Vector3 ut;       // normalized tangential point velocity.
   cgal::Vector3 uf;       // direction of tangential flow.
-                                  // uf = - vt / ||vt|| = - ut
+  // uf = - vt / ||vt|| = - ut
   cgal::Vector3 vf;       // tangential flow vf = ||vp|| uf
+
+  // NEW: fluid velocity fields
+  cgal::Vector3 v_orbital;   // wave orbital velocity at centroid depth
+  cgal::Vector3 v_current;   // bulk water current (HEC-RAS, optional)
+  cgal::Vector3 v_fluid;     // total fluid velocity = v_orbital + v_current
+  cgal::Vector3 v_rel;       // relative velocity = vp - v_fluid
+                             // (hull velocity relative to fluid)
+
+// NEW: foil decomposition of v_rel
+  cgal::Vector3 v_rel_n;     // normal component of v_rel
+  cgal::Vector3 v_rel_t;     // tangential component of v_rel
+  double        alpha;       // angle of attack (rad)
+  double        v_rel_mag;   // |v_rel|
 };
 
 /// \internal
@@ -379,7 +407,8 @@ class Hydrodynamics
     std::shared_ptr<const WavefieldSampler> _wavefieldSampler,
     const math::Pose3d& _pose,
     const cgal::Vector3& _linVelocity,
-    const cgal::Vector3& _angVelocity);
+    const cgal::Vector3& _angVelocity,
+    const std::chrono::_V2::steady_clock::duration& simTime);
 
   /// \brief Compute the hydrostatic and hydrodynamic forces.
   ///
@@ -448,9 +477,17 @@ class Hydrodynamics
   void ComputeWaterlineLength();
 
   /// internal
+  /// \brief Compute the beam of the waterline.
+  void ComputeWaterlineBeam();
+
+  /// internal
+  /// \brief Compute the dynamic foil geometry for lift calculations.
+  void ComputeDynamicFoilGeometry();
+
+  /// internal
   /// \brief Calculate normal and tangential velocities for
   ///        each submerged triangle.
-  void ComputePointVelocities();
+  void ComputePointVelocities(const std::chrono::_V2::steady_clock::duration& simTime);
 
   /// internal
   // \breif Compute the Reynolds number.
@@ -471,6 +508,10 @@ class Hydrodynamics
   /// internal
   /// \brief 'Pressure drag' force calculation.
   void ComputePressureDragForce();
+
+  /// internal
+  /// \brief Foil lift force calculation.
+  void ComputeFoilLiftForce();
 
   /// \internal
   /// \brief Pointer to the class private data.

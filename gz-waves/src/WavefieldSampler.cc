@@ -284,5 +284,39 @@ double WavefieldSampler::ComputeDepthDirectly(
   return h;
 }
 
+cgal::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
+  double x, double y, double z, double t) const
+{
+  cgal::Vector3 v_orb = CGAL::NULL_VECTOR;
+  // Set up parameter references
+  const WaveParameters* params = impl_->wavefield_->GetParameters().get();
+
+  Index n = params->Amplitude_V().size();
+  for (Index i = 0; i < n; ++i)
+  {
+    const double k = params->Wavenumber_V()[i];
+    const double omega = params->AngularFrequency_V()[i];
+    const double a = params->Amplitude_V()[i];
+    const double phi = params->Phase_V()[i];
+    const double dx = params->Direction_V()[i].X();
+    const double dy = params->Direction_V()[i].Y();
+
+    double omega_t = std::fmod(omega * t, 2.0 * M_PI);
+    double phase = k * (dx * x + dy * y) - omega_t + phi;
+    double depth_decay = std::exp(k * z);  // z < 0 below surface
+
+    double u_horiz = a * omega * depth_decay * std::cos(phase);
+    v_orb = v_orb + cgal::Vector3(u_horiz * dx,
+      u_horiz * dy,
+      a * omega * depth_decay * std::sin(phase));
+
+    // debug
+    // gzmsg << "k: " << k << " omega: " << omega << " a: " << a << " phi: " << phi << " dx: " << dx << " dy: " << dy << std::endl;
+    // gzmsg << "omega_t: " << omega_t << " phase: " << phase << " depth_decay: " << depth_decay << " u_horiz: " << u_horiz << std::endl;
+    // gzmsg << "v_orb: " << v_orb << std::endl;
+  }
+  return v_orb;
+}
+
 }  // namespace waves
 }  // namespace gz

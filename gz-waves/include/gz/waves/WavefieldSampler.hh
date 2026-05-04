@@ -95,6 +95,9 @@ class WavefieldSampler
     const cgal::Point3& point,
     double time);
 
+  cgal::Vector3 ComputeOrbitalVelocity(
+    double x, double y, double z, double t) const;
+
  private:
   /// \internal Private implementation.
   std::shared_ptr<WavefieldSamplerPrivate> impl_;

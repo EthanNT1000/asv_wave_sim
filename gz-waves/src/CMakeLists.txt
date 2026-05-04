@@ -19,6 +19,7 @@ set(sources
   SubMeshWithTangents.cc
   TriangulatedGrid.cc
   Utilities.cc
+  WaterCurrentGrid.cc
   Wavefield.cc
   WavefieldSampler.cc
   WaveParameters.cc

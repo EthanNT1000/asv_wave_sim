@@ -355,7 +355,10 @@ class HydrodynamicsParametersPrivate
     cSDrag1(1.0E+2),
     cSDrag2(1.0E+2),
     fSDrag(0.4),
-    vRDrag(1.0)
+    vRDrag(1.0),
+    foilLiftOn(true),
+    cLift1(1.0),
+    cLift2(2.0)
   {}
 
   // Linear and rotational damping
@@ -399,6 +402,12 @@ class HydrodynamicsParametersPrivate
   static constexpr double defaultFSDragMax = 0.7;
   static constexpr double defaultVRDragMin = 0.5;
   static constexpr double defaultVRDragMax = 2.0;
+
+  bool   foilLiftOn;
+  double cLift1;      // Cl scale factor (tune per hull)
+  double cLift2;      // Cl quadratic term
+
+  WaterCurrentGrid water_current_grid_;
 };
 
 //////////////////////////////////////////////////
@@ -497,6 +506,31 @@ double HydrodynamicsParameters::VRDrag() const
 }
 
 //////////////////////////////////////////////////
+bool HydrodynamicsParameters::FoilLiftOn() const
+{
+  return this->data->foilLiftOn;
+}
+
+//////////////////////////////////////////////////
+double HydrodynamicsParameters::CLift1() const
+{
+  return this->data->cLift1;
+}
+
+//////////////////////////////////////////////////
+double HydrodynamicsParameters::CLift2() const
+{
+  return this->data->cLift2;
+}
+
+//////////////////////////////////////////////////
+const WaterCurrentGrid& HydrodynamicsParameters::GetWaterCurrentGrid() const
+{
+  return this->data->water_current_grid_;
+}
+
+
+//////////////////////////////////////////////////
 void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
 {
   this->data->dampingOn      = Utilities::MsgParamBool(
@@ -533,51 +567,58 @@ void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
 //////////////////////////////////////////////////
 void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
 {
+  std::string bin_path;
+  if (_sdf.HasElement("water_current_grid"))
+    bin_path = _sdf.Get<std::string>("water_current_grid");
+
+  if (!bin_path.empty())
+    this->data->water_current_grid_.LoadFromFile(bin_path);
+
+  this->data->foilLiftOn = Utilities::SdfParamBool(_sdf, "foil_lift_on", this->data->foilLiftOn);
+  this->data->cLift1 = Utilities::SdfParamDouble(_sdf, "cLift1", this->data->cLift1);
+  this->data->cLift2 = Utilities::SdfParamDouble(_sdf, "cLift2", this->data->cLift2);
+
+  this->data->dampingOn = Utilities::SdfParamBool(
+    _sdf, "damping_on", this->data->dampingOn);
+  this->data->viscousDragOn = Utilities::SdfParamBool(
+    _sdf, "viscous_drag_on", this->data->viscousDragOn);
+  this->data->pressureDragOn = Utilities::SdfParamBool(
+    _sdf, "pressure_drag_on", this->data->pressureDragOn);
+
   if (_sdf.HasElement("randomize"))
   {
     this->SetRandomFromSDF(_sdf);
     return;
   }
 
-  this->data->dampingOn = Utilities::SdfParamBool(
-      _sdf,  "damping_on",       this->data->dampingOn);
-  this->data->viscousDragOn  = Utilities::SdfParamBool(
-      _sdf,  "viscous_drag_on",  this->data->viscousDragOn);
-  this->data->pressureDragOn = Utilities::SdfParamBool(
-      _sdf,  "pressure_drag_on", this->data->pressureDragOn);
-
   this->data->cDampL1 = Utilities::SdfParamDouble(
-      _sdf, "cDampL1",  this->data->cDampL1);
+    _sdf, "cDampL1", this->data->cDampL1);
   this->data->cDampL2 = Utilities::SdfParamDouble(
-      _sdf, "cDampL2",  this->data->cDampL2);
+    _sdf, "cDampL2", this->data->cDampL2);
   this->data->cDampR1 = Utilities::SdfParamDouble(
-      _sdf, "cDampR1",  this->data->cDampR1);
+    _sdf, "cDampR1", this->data->cDampR1);
   this->data->cDampR2 = Utilities::SdfParamDouble(
-      _sdf, "cDampR2",  this->data->cDampR2);
+    _sdf, "cDampR2", this->data->cDampR2);
   this->data->cPDrag1 = Utilities::SdfParamDouble(
-      _sdf, "cPDrag1",  this->data->cPDrag1);
+    _sdf, "cPDrag1", this->data->cPDrag1);
   this->data->cPDrag2 = Utilities::SdfParamDouble(
-      _sdf, "cPDrag2",  this->data->cPDrag2);
-  this->data->fPDrag  = Utilities::SdfParamDouble(
-      _sdf, "fPDrag",   this->data->fPDrag);
+    _sdf, "cPDrag2", this->data->cPDrag2);
+  this->data->fPDrag = Utilities::SdfParamDouble(
+    _sdf, "fPDrag", this->data->fPDrag);
   this->data->cSDrag1 = Utilities::SdfParamDouble(
-      _sdf, "cSDrag1",  this->data->cSDrag1);
+    _sdf, "cSDrag1", this->data->cSDrag1);
   this->data->cSDrag2 = Utilities::SdfParamDouble(
-      _sdf, "cSDrag2",  this->data->cSDrag2);
-  this->data->fSDrag  = Utilities::SdfParamDouble(
-      _sdf, "fSDrag",   this->data->fSDrag);
-  this->data->vRDrag  = Utilities::SdfParamDouble(
-      _sdf, "vRDrag",   this->data->vRDrag);
+    _sdf, "cSDrag2", this->data->cSDrag2);
+  this->data->fSDrag = Utilities::SdfParamDouble(
+    _sdf, "fSDrag", this->data->fSDrag);
+  this->data->vRDrag = Utilities::SdfParamDouble(
+    _sdf, "vRDrag", this->data->vRDrag);
 }
 
 void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
   // Seed the random number engine using the current time
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937 engine(seed); // Using the Mersenne Twister 32-bit engine
-
-  this->data->dampingOn = true;
-  this->data->viscousDragOn  = true;
-  this->data->pressureDragOn = true;
 
   std::uniform_real_distribution<double> dampinDist(
     Utilities::SdfParamDouble(_sdf, "dampingDistMin", this->data->defaultDampingDistMin),
@@ -696,6 +737,12 @@ class HydrodynamicsPrivate
   /// \brief The calculated waterline length.
   double waterlineLength;
 
+  /// \brief The calculated waterline beam (max width at waterline).
+  double waterlineBeam;
+
+  /// \brief The aspect ratio of the dynamic foil (for lift calculation).
+  double dynamic_foil_ar;
+
   /// \brief The depth at each vertex point.
   cgal::Mesh::Property_map<cgal::Mesh::Vertex_index, double> depths;
   std::vector<cgal::Triangle> submergedTriangles;
@@ -740,8 +787,9 @@ void Hydrodynamics::Update(
   std::shared_ptr<const WavefieldSampler> _wavefieldSampler,
   const gz::math::Pose3d& _pose,
   const cgal::Vector3& _linVelocity,
-  const cgal::Vector3& _angVelocity
-)
+  const cgal::Vector3& _angVelocity,
+  const std::chrono::_V2::steady_clock::duration& simTime
+  )
 {
   // Set rigid body props.
   this->data->wavefieldSampler = _wavefieldSampler;
@@ -758,7 +806,9 @@ void Hydrodynamics::Update(
   this->UpdateSubmergedTriangles();
   this->ComputeAreas();
   this->ComputeWaterlineLength();
-  this->ComputePointVelocities();
+  this->ComputeWaterlineBeam();
+  this->ComputeDynamicFoilGeometry();
+  this->ComputePointVelocities(simTime);
   this->ComputeBuoyancyForce();
 
   if (this->data->params->ViscousDragOn())
@@ -766,6 +816,9 @@ void Hydrodynamics::Update(
 
   if (this->data->params->PressureDragOn())
     this->ComputePressureDragForce();
+
+  if (this->data->params->FoilLiftOn())
+    this->ComputeFoilLiftForce();
 
   if (this->data->params->DampingOn())
     this->ComputeDampingForce();
@@ -1083,9 +1136,51 @@ void Hydrodynamics::ComputeWaterlineLength()
   // gzmsg << "waterline length: " << length << "\n";
 }
 
+void Hydrodynamics::ComputeWaterlineBeam()
+{
+    // Reuse the same waterline loop, project onto y-axis instead
+    cgal::Vector3 yaxis = ToVector3(this->data->pose.Rot().RotateVector(
+        gz::math::Vector3d(0, 1, 0)));
+
+    double beam = 0.0;
+    for (auto&& line : this->data->waterline)
+    {
+        beam += std::abs(CGAL::scalar_product(line.to_vector(), yaxis));
+    }
+    beam *= 0.5;
+    this->data->waterlineBeam = beam;
+}
+
+void Hydrodynamics::ComputeDynamicFoilGeometry()
+{
+  // ── identify bottom triangles ─────────────────────────────────────────
+  // "Bottom" = outward normal has significant upward Z component
+  // (hull bottom normals point downward into water, so outward = upward in world)
+  double wetted_bottom_area = 0.0;
+  for (auto& props : this->data->submergedTriangleProperties)
+  {
+    double nz = CGAL::to_double(props.normal.z());
+    if (nz > this->data->params->BOTTOM_THRESHOLD)  // upward-facing = bottom surface
+      wetted_bottom_area += props.area;
+  }
+
+  double span = this->data->waterlineBeam;    // from ComputeWaterlineBeam()
+
+  this->data->dynamic_foil_ar =
+    (span * span) / (wetted_bottom_area + 1e-9);
+
+  // @DEBUG_INFO
+  // gzmsg << "Submerged area: " << this->data->submergedArea << "\n";
+  // gzmsg << "wetted_bottom_area: " << wetted_bottom_area << "\n";
+  // gzmsg << "span: " << span << "\n";
+  // gzmsg << "dynamic_foil_ar: " << this->data->dynamic_foil_ar << "\n";
+}
+
+
 //////////////////////////////////////////////////
 // Compute the point velocity at a triangles centroid
-void Hydrodynamics::ComputePointVelocities()
+void Hydrodynamics::ComputePointVelocities(
+  const std::chrono::_V2::steady_clock::duration& simTime)
 {
   auto& position = this->data->position;
   auto& v = this->data->linVelocity;
@@ -1099,31 +1194,54 @@ void Hydrodynamics::ComputePointVelocities()
     // vp = v + omega x xr
     subTriProps.vp = v + CGAL::cross_product(omega, subTriProps.xr);
 
-    // up = vp / ||vp||
-    subTriProps.up = Geometry::Normalize(subTriProps.vp);
+    // NEW: wave orbital velocity at triangle centroid (with depth)
+    double cx = subTriProps.centroid.x();
+    double cy = subTriProps.centroid.y();
+    double cz = subTriProps.centroid.z();   // negative = below surface
 
-    // cos(theta) = up . n
-    subTriProps.cosTheta = CGAL::scalar_product(
-        subTriProps.up, subTriProps.normal);
+    subTriProps.v_orbital = this->data->wavefieldSampler->ComputeOrbitalVelocity(cx, cy, cz,
+      std::chrono::duration<double>(simTime).count());
+    subTriProps.v_current =
+      this->data->params->GetWaterCurrentGrid().SampleAt(cx, cy);
+    subTriProps.v_fluid = subTriProps.v_orbital + subTriProps.v_current;
 
-    // vn = (up . n) n
-    subTriProps.vn = subTriProps.normal * subTriProps.cosTheta;
+    // NEW: relative velocity — hull velocity minus fluid velocity
+    // (this replaces the implicit "fluid = still" assumption)
+    subTriProps.v_rel = subTriProps.vp - subTriProps.v_fluid;
+    subTriProps.v_rel_mag = std::sqrt(CGAL::to_double(subTriProps.v_rel.squared_length()));
 
-    // vt = vp - vn
-    subTriProps.vt = subTriProps.vp - subTriProps.vn;
+    // Decompose v_rel into normal and tangential components
+    double v_rel_dot_n = CGAL::to_double(
+      CGAL::scalar_product(subTriProps.v_rel, subTriProps.normal));
+    subTriProps.v_rel_n = subTriProps.normal * v_rel_dot_n;
+    subTriProps.v_rel_t = subTriProps.v_rel - subTriProps.v_rel_n;
 
-    // un = vn / ||vn||
-    // subTriProps.un = Geometry::Normalize(subTriProps.vn);
+    // Angle of attack: angle between v_rel and the surface plane
+    double v_rel_t_mag = std::sqrt(
+      CGAL::to_double(subTriProps.v_rel_t.squared_length()));
+    subTriProps.alpha = std::atan2(
+      std::fabs(v_rel_dot_n),
+      v_rel_t_mag + 1e-9);  // epsilon avoids divide-by-zero
 
-    // ut = vt / ||vt||
-    subTriProps.ut = Geometry::Normalize(subTriProps.vt);
+    // Existing: keep vn, vt, up, cosTheta using v_rel
+    // (previously used vp — now use v_rel for all drag calculations too)
+    subTriProps.up = (subTriProps.v_rel_mag > 1e-9)
+      ? subTriProps.v_rel / subTriProps.v_rel_mag
+      : CGAL::NULL_VECTOR;
 
-    // uf = - vt / ||vt|| = - ut
-    subTriProps.uf = - subTriProps.ut;
+    subTriProps.cosTheta = CGAL::scalar_product(subTriProps.up, subTriProps.normal);
 
-    // vf = ||vp|| uf
-    subTriProps.vf =
-        subTriProps.uf * std::sqrt(subTriProps.vp.squared_length());
+    subTriProps.vn = subTriProps.normal * subTriProps.cosTheta * subTriProps.v_rel_mag;
+
+    subTriProps.vt = subTriProps.v_rel - subTriProps.vn;
+
+    subTriProps.ut = (v_rel_t_mag > 1e-9)
+      ? subTriProps.v_rel_t / v_rel_t_mag
+      : CGAL::NULL_VECTOR;
+
+    subTriProps.uf = -subTriProps.ut;
+
+    subTriProps.vf = subTriProps.uf * subTriProps.v_rel_mag;
   }
 }
 
@@ -1309,6 +1427,61 @@ void Hydrodynamics::ComputePressureDragForce()
   //     DebugPrint(subTriProps);
   //   }
   // }
+}
+
+void Hydrodynamics::ComputeFoilLiftForce()
+{
+    const double rho  = PhysicalConstants::WaterDensity();
+    const double cL1  = this->data->params->CLift1();
+    const double cL2  = this->data->params->CLift2();
+
+    // ── USE DYNAMIC AR instead of fixed SDF parameter ──
+    double AR = this->data->dynamic_foil_ar;   // computed this step
+    AR = std::max(AR, 0.5);                    // physical lower bound
+
+    for (auto& props : this->data->submergedTriangleProperties)
+    {
+        // Only apply to bottom-facing triangles (the planing surface)
+        double nz = CGAL::to_double(props.normal.z());
+        if (nz < this->data->params->BOTTOM_THRESHOLD) continue;   // skip side and stern triangles
+
+        double v_mag = props.v_rel_mag;
+        if (v_mag < 1e-4) continue;
+
+        double alpha  = props.alpha;
+        double sin_a  = std::sin(alpha);
+        double Cl     = cL1 * 2.0 * M_PI * sin_a
+                      + cL2 * sin_a * std::fabs(sin_a);
+
+        // Dynamic AR means this Cdi is physically correct at each planing state
+        double Cdi    = (Cl * Cl) / (M_PI * AR + 1e-9);
+
+        double q_A    = 0.5 * rho * v_mag * v_mag * props.area;
+
+        // Lift direction: component of normal perpendicular to v_rel
+        cgal::Vector3 lift_dir = props.normal
+            - props.up * CGAL::to_double(
+                CGAL::scalar_product(props.normal, props.up));
+        double ld_mag = std::sqrt(
+            CGAL::to_double(lift_dir.squared_length()));
+        if (ld_mag < 1e-9) continue;
+        lift_dir = lift_dir / ld_mag;
+
+        cgal::Vector3 F_lift    = lift_dir * (Cl  * q_A);
+        cgal::Vector3 F_induced = -props.up * (Cdi * q_A);
+        cgal::Vector3 F_foil    = F_lift + F_induced;
+
+        this->data->force  += F_foil;
+        this->data->torque += CGAL::cross_product(props.xr, F_foil);
+
+        // @DEBUG_INFO
+        // gzmsg << "alpha: " << alpha << "\n";
+        // gzmsg << "Cl: " << Cl << "\n";
+        // gzmsg << "Cdi: " << Cdi << "\n";
+        // gzmsg << "F_lift: " << F_lift << "\n";
+        // gzmsg << "F_induced: " << F_induced << "\n";
+        // gzmsg << "F_foil: " << F_foil << "\n";
+    }
 }
 
 }  // namespace waves

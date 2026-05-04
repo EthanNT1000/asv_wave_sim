@@ -784,7 +784,8 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
           hd->linkMeshes[j],
           hd->wavefieldSampler));
       hd->hydrodynamics[j]->Update(
-        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity);
+        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity,
+        std::chrono::steady_clock::duration::zero());
     }
   }
 
@@ -802,7 +803,7 @@ void HydrodynamicsPrivate::Update(const UpdateInfo& _info,
 }
 
 //////////////////////////////////////////////////
-void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo&/*_info*/,
+void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
   EntityComponentManager& _ecm)
 {
   ////////// BEGIN TESTING
@@ -867,7 +868,7 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo&/*_info*/,
 
       // Update hydrodynamics
       hd->hydrodynamics[j]->Update(
-        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity);
+        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity, _info.simTime);
 
       // Apply forces to the Link
       auto force = waves::ToGz(hd->hydrodynamics[j]->Force());
