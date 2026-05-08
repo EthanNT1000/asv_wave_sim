@@ -1220,7 +1220,7 @@ void Hydrodynamics::ComputePointVelocities(
     double v_rel_t_mag = std::sqrt(
       CGAL::to_double(subTriProps.v_rel_t.squared_length()));
     subTriProps.alpha = std::atan2(
-      std::fabs(v_rel_dot_n),
+      v_rel_dot_n,
       v_rel_t_mag + 1e-9);  // epsilon avoids divide-by-zero
 
     // Existing: keep vn, vt, up, cosTheta using v_rel
