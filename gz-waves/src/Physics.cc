@@ -358,8 +358,9 @@ class HydrodynamicsParametersPrivate
     vRDrag(1.0),
     foilLiftOn(true),
     cLift1(1.0),
-    cLift2(2.0)
-  {}
+    alphaStall(0.26) // ~15° in radians (tune per hull)
+  {
+  }
 
   // Linear and rotational damping
   bool dampingOn;
@@ -405,7 +406,8 @@ class HydrodynamicsParametersPrivate
 
   bool   foilLiftOn;
   double cLift1;      // Cl scale factor (tune per hull)
-  double cLift2;      // Cl quadratic term
+  double cLMax;      // Maximum lift coefficient (tune per hull)
+  double alphaStall; // Stall angle of attack (rad)
 
   WaterCurrentGrid water_current_grid_;
 };
@@ -518,9 +520,16 @@ double HydrodynamicsParameters::CLift1() const
 }
 
 //////////////////////////////////////////////////
-double HydrodynamicsParameters::CLift2() const
+double HydrodynamicsParameters::CLMax() const
 {
-  return this->data->cLift2;
+  return this->data->cLMax;
+}
+
+
+//////////////////////////////////////////////////
+double HydrodynamicsParameters::AlphaStall() const
+{
+  return this->data->alphaStall;
 }
 
 //////////////////////////////////////////////////
@@ -528,7 +537,6 @@ const WaterCurrentGrid& HydrodynamicsParameters::GetWaterCurrentGrid() const
 {
   return this->data->water_current_grid_;
 }
-
 
 //////////////////////////////////////////////////
 void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
@@ -576,7 +584,9 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
 
   this->data->foilLiftOn = Utilities::SdfParamBool(_sdf, "foil_lift_on", this->data->foilLiftOn);
   this->data->cLift1 = Utilities::SdfParamDouble(_sdf, "cLift1", this->data->cLift1);
-  this->data->cLift2 = Utilities::SdfParamDouble(_sdf, "cLift2", this->data->cLift2);
+  this->data->alphaStall = Utilities::SdfParamDouble(_sdf, "alphaStall", this->data->alphaStall);
+  this->data->cLMax = Utilities::SdfParamDouble(_sdf, "cLMax",
+    this->data->cLift1 * 2.0 * M_PI * std::sin(this->data->alphaStall));
 
   this->data->dampingOn = Utilities::SdfParamBool(
     _sdf, "damping_on", this->data->dampingOn);
@@ -743,6 +753,9 @@ class HydrodynamicsPrivate
   /// \brief The aspect ratio of the dynamic foil (for lift calculation).
   double dynamic_foil_ar;
 
+  /// \brief The water current at the centre of mass.
+  cgal::Vector3 waterCurrentCoM;
+
   /// \brief The depth at each vertex point.
   cgal::Mesh::Property_map<cgal::Mesh::Vertex_index, double> depths;
   std::vector<cgal::Triangle> submergedTriangles;
@@ -810,6 +823,8 @@ void Hydrodynamics::Update(
   this->ComputeDynamicFoilGeometry();
   this->ComputePointVelocities(simTime);
   this->ComputeBuoyancyForce();
+
+  this->SampleWaterCurrentCoM();
 
   if (this->data->params->ViscousDragOn())
     this->ComputeViscousDragForce();
@@ -1245,13 +1260,20 @@ void Hydrodynamics::ComputePointVelocities(
   }
 }
 
+///////////////////////////////////////////////////
+void Hydrodynamics::SampleWaterCurrentCoM() {
+  this->data->waterCurrentCoM = this->data->params->GetWaterCurrentGrid().
+    SampleAt(this->data->position.x(), this->data->position.y());
+}
+
+
 //////////////////////////////////////////////////
 // Compute the Reynolds number
 double Hydrodynamics::ComputeReynoldsNumber() const
 {
   // fluid speed
-  auto& v = this->data->linVelocity;
-  double u = std::sqrt(v.squared_length());
+  cgal::Vector3 v_rel = this->data->linVelocity - this->data->waterCurrentCoM;
+  double u = std::sqrt(v_rel.squared_length());
 
   // characteristic length
   double L = this->data->waterlineLength;
@@ -1314,7 +1336,7 @@ void Hydrodynamics::ComputeDampingForce()
   double rs = subArea / area;
 
   // Force
-  auto& v = this->data->linVelocity;
+  cgal::Vector3 v = this->data->linVelocity - this->data->waterCurrentCoM;
   double linSpeed = std::sqrt(v.squared_length());
   double cL = - rs * (cDampL1 + cDampL2 * linSpeed);
   cgal::Vector3 force = v * cL;
@@ -1391,7 +1413,7 @@ void Hydrodynamics::ComputePressureDragForce()
   {
     // General
     double S    = subTriProps.area;
-    double vp   = std::sqrt(subTriProps.vp.squared_length());
+    double vp = subTriProps.v_rel_mag;   // fluid-relative speed
     double cosTheta = subTriProps.cosTheta;
 
     double v    = vp / vRDrag;
@@ -1433,7 +1455,10 @@ void Hydrodynamics::ComputeFoilLiftForce()
 {
     const double rho  = PhysicalConstants::WaterDensity();
     const double cL1  = this->data->params->CLift1();
-    const double cL2  = this->data->params->CLift2();
+
+    const double Cl_alpha  = cL1 * 2.0 * M_PI;   // lift curve slope
+    const double alpha_stall = this->data->params->AlphaStall();
+    const double Cl_max = this->data->params->CLMax();
 
     // ── USE DYNAMIC AR instead of fixed SDF parameter ──
     double AR = this->data->dynamic_foil_ar;   // computed this step
@@ -1449,9 +1474,11 @@ void Hydrodynamics::ComputeFoilLiftForce()
         if (v_mag < 1e-4) continue;
 
         double alpha  = props.alpha;
-        double sin_a  = std::sin(alpha);
-        double Cl     = cL1 * 2.0 * M_PI * sin_a
-                      + cL2 * sin_a * std::fabs(sin_a);
+        double Cl;
+        if (std::fabs(alpha) < alpha_stall)
+            Cl = Cl_alpha * alpha;                        // linear region
+        else
+            Cl = Cl_max * (alpha > 0.0 ? 1.0 : -1.0);   // capped at stall
 
         // Dynamic AR means this Cdi is physically correct at each planing state
         double Cdi    = (Cl * Cl) / (M_PI * AR + 1e-9);

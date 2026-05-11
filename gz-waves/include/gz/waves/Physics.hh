@@ -260,8 +260,10 @@ class HydrodynamicsParameters
   /// \brief The lift coefficient scale factor.
   double CLift1() const;
 
-  /// \brief The lift coefficient quadratic term.
-  double CLift2() const;
+  double CLMax() const;
+
+  /// \brief The stall angle of attack (rad).
+  double AlphaStall() const;
 
   /// \brief Get a reference to the water current grid.
   const WaterCurrentGrid& GetWaterCurrentGrid() const;
@@ -488,6 +490,10 @@ class Hydrodynamics
   /// \brief Calculate normal and tangential velocities for
   ///        each submerged triangle.
   void ComputePointVelocities(const std::chrono::_V2::steady_clock::duration& simTime);
+
+  /// internal
+  /// \brief Sample the water current at the center of mass.
+  void SampleWaterCurrentCoM();
 
   /// internal
   // \breif Compute the Reynolds number.
