@@ -358,7 +358,8 @@ class HydrodynamicsParametersPrivate
     vRDrag(1.0),
     foilLiftOn(true),
     cLift1(1.0),
-    alphaStall(0.26) // ~15° in radians (tune per hull)
+    alphaStall(0.26), // ~15° in radians (tune per hull)
+    cLMax(1.62193)
   {
   }
 
@@ -406,8 +407,8 @@ class HydrodynamicsParametersPrivate
 
   bool   foilLiftOn;
   double cLift1;      // Cl scale factor (tune per hull)
-  double cLMax;      // Maximum lift coefficient (tune per hull)
   double alphaStall; // Stall angle of attack (rad)
+  double cLMax;      // Maximum lift coefficient (tune per hull)
 
   WaterCurrentGrid water_current_grid_;
 };
@@ -570,6 +571,17 @@ void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
       _msg, "fSDrag",   this->data->fSDrag);
   this->data->vRDrag  = Utilities::MsgParamDouble(
       _msg, "vRDrag",   this->data->vRDrag);
+
+  this->data->foilLiftOn = Utilities::MsgParamBool(
+      _msg, "foil_lift_on", this->data->foilLiftOn);
+  this->data->cLift1 = Utilities::MsgParamDouble(
+      _msg, "cLift1",     this->data->cLift1);
+  this->data->alphaStall = Utilities::MsgParamDouble(
+      _msg, "alphaStall", this->data->alphaStall);
+  // cLMax default recomputed from (possibly updated) cLift1 and alphaStall
+  this->data->cLMax = Utilities::MsgParamDouble(
+      _msg, "cLMax",
+      this->data->cLift1 * 2.0 * M_PI * std::sin(this->data->alphaStall));
 }
 
 //////////////////////////////////////////////////
@@ -652,7 +664,7 @@ void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
   std::uniform_real_distribution<double> cSDragDist(
     Utilities::SdfParamDouble(_sdf, "cSDragDistMin", this->data->defaultCSDragMin),
     Utilities::SdfParamDouble(_sdf, "cSDragDistMax", this->data->defaultCSDragMax));
-  this->data->cSDrag1 = cPDragDist(engine);
+  this->data->cSDrag1 = cSDragDist(engine);
   this->data->cSDrag2 = cSDragDist(engine);
 
   std::uniform_real_distribution<double> fSDragDist(
@@ -1139,16 +1151,28 @@ void Hydrodynamics::ComputeWaterlineLength()
   cgal::Vector3 xaxis = ToVector3(this->data->pose.Rot().RotateVector(
     gz::math::Vector3d(1, 0, 0)));
 
-  // Project the waterline onto the x-axis
-  double length = 0.0;
+  if (this->data->waterline.empty())
+  {
+    this->data->waterlineLength = 0.0;
+    return;
+  }
+
+  // Exact LWL: longitudinal extent of all waterline endpoints.
+  // Handles non-convex hulls correctly; no 0.5 approximation needed.
+  double minProj = std::numeric_limits<double>::max();
+  double maxProj = std::numeric_limits<double>::lowest();
   for (auto&& line : this->data->waterline)
   {
-    length += std::abs(CGAL::scalar_product(line.to_vector(), xaxis));
+    double p0 = CGAL::to_double(
+        CGAL::scalar_product(line.point() - CGAL::ORIGIN, xaxis));
+    double p1 = p0 + CGAL::to_double(
+        CGAL::scalar_product(line.to_vector(), xaxis));
+    minProj = std::min(minProj, std::min(p0, p1));
+    maxProj = std::max(maxProj, std::max(p0, p1));
   }
-  length *= 0.5;
-  this->data->waterlineLength = length;
+  this->data->waterlineLength = maxProj - minProj;
   // @DEBUG_INFO
-  // gzmsg << "waterline length: " << length << "\n";
+  // gzmsg << "waterline length: " << this->data->waterlineLength << "\n";
 }
 
 void Hydrodynamics::ComputeWaterlineBeam()
@@ -1157,13 +1181,25 @@ void Hydrodynamics::ComputeWaterlineBeam()
     cgal::Vector3 yaxis = ToVector3(this->data->pose.Rot().RotateVector(
         gz::math::Vector3d(0, 1, 0)));
 
-    double beam = 0.0;
+    if (this->data->waterline.empty())
+    {
+        this->data->waterlineBeam = 0.0;
+        return;
+    }
+
+    // Exact beam: lateral extent of all waterline endpoints.
+    double minProj = std::numeric_limits<double>::max();
+    double maxProj = std::numeric_limits<double>::lowest();
     for (auto&& line : this->data->waterline)
     {
-        beam += std::abs(CGAL::scalar_product(line.to_vector(), yaxis));
+        double p0 = CGAL::to_double(
+            CGAL::scalar_product(line.point() - CGAL::ORIGIN, yaxis));
+        double p1 = p0 + CGAL::to_double(
+            CGAL::scalar_product(line.to_vector(), yaxis));
+        minProj = std::min(minProj, std::min(p0, p1));
+        maxProj = std::max(maxProj, std::max(p0, p1));
     }
-    beam *= 0.5;
-    this->data->waterlineBeam = beam;
+    this->data->waterlineBeam = maxProj - minProj;
 }
 
 void Hydrodynamics::ComputeDynamicFoilGeometry()
@@ -1375,8 +1411,7 @@ void Hydrodynamics::ComputeViscousDragForce()
   for (auto&& subTriProps : this->data->submergedTriangleProperties)
   {
     // Force
-    double fDrag = 0.5 * rho * cF * subTriProps.area
-      * std::sqrt(subTriProps.vf.squared_length());
+    double fDrag = 0.5 * rho * cF * subTriProps.area * subTriProps.v_rel_mag;
     cgal::Vector3 force = subTriProps.vf * fDrag;
     sumForce += force;
 
