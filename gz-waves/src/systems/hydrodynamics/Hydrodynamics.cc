@@ -365,6 +365,8 @@ public: void DeleteUnderwaterSurfaceMarkers();
       /// \param[in] _msg Wave parameters message.
 public: void OnWaveMarkersMsg(const gz::msgs::Param& _msg);
 
+public: void PublishWaterCurrent(const UpdateInfo& _info, EntityComponentManager& _ecm);
+
 public: void SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm);
 
@@ -420,7 +422,11 @@ public: int32_t influxUdpSockfd = -1;
 public: struct sockaddr_in influxAddr {};
 public: static constexpr int32_t influxSendBuffSize = 65507;
 
-      ////////// END HYDRODYNAMICS PLUGIN
+public: std::string waterCurrentTopicHeader;
+public: std::string waterCurrentLinkName;
+public: transport::Node::Publisher waterCurrentPub;
+
+////////// END HYDRODYNAMICS PLUGIN
 };
 
 //////////////////////////////////////////////////
@@ -512,6 +518,27 @@ void Hydrodynamics::Configure(const Entity& _entity,
     this->dataPtr->showUnderwaterSurface =
       waves::Utilities::SdfParamBool(
         *sdfMarkers, "underwater_surface", false);
+  }
+
+  {
+    std::string defaultTopic = "/model/" + this->dataPtr->model.Name(_ecm) + "/water_current";
+    if (_sdf->HasElement("WaterCurrent")) {
+      auto sdfWC = _sdf->GetElementImpl("WaterCurrent");
+      this->dataPtr->waterCurrentTopicHeader =
+        waves::Utilities::SdfParamString(*sdfWC, "topic", defaultTopic);
+      this->dataPtr->waterCurrentLinkName =
+        waves::Utilities::SdfParamString(*sdfWC, "link_name", "");
+    } else {
+      this->dataPtr->waterCurrentTopicHeader = defaultTopic;
+    }
+    this->dataPtr->waterCurrentPub =
+      this->dataPtr->node.Advertise<gz::msgs::Vector3d>(
+        this->dataPtr->waterCurrentTopicHeader);
+    gzmsg << "Hydrodynamics: publishing water current on ["
+          << this->dataPtr->waterCurrentTopicHeader << "]"
+          << (this->dataPtr->waterCurrentLinkName.empty() ? "" :
+              " for link [" + this->dataPtr->waterCurrentLinkName + "]")
+          << "\n";
   }
 
   if (_sdf->HasElement("influxDBUdp")) {
@@ -800,6 +827,7 @@ void HydrodynamicsPrivate::Update(const UpdateInfo& _info,
   this->UpdatePhysics(_info, _ecm);
   this->UpdateMarkers(_info, _ecm);
   this->SendDataToInfluxDB(_info, _ecm);
+  this->PublishWaterCurrent(_info, _ecm);
 }
 
 //////////////////////////////////////////////////
@@ -1561,6 +1589,58 @@ void HydrodynamicsPrivate::AppendToStreamOrSend(std::stringstream& _stream, cons
     _stream.clear();
   }
   _stream << _line;
+}
+
+//////////////////////////////////////////////////
+void HydrodynamicsPrivate::PublishWaterCurrent(
+  const UpdateInfo& _info, EntityComponentManager& _ecm)
+{
+  if (!this->waterCurrentPub) return;
+  if (this->hydroData.empty()) return;
+
+  // Find the target link: use link_name if specified, otherwise the first entry.
+  HydrodynamicsLinkData* hd = nullptr;
+  if (this->waterCurrentLinkName.empty())
+  {
+    hd = this->hydroData.front().get();
+  }
+  else
+  {
+    for (auto& entry : this->hydroData)
+    {
+      auto nameComp = _ecm.Component<components::Name>(entry->link.Entity());
+      if (nameComp && nameComp->Data() == this->waterCurrentLinkName)
+      {
+        hd = entry.get();
+        break;
+      }
+    }
+    if (!hd)
+    {
+      gzwarn << "Hydrodynamics: water_current link_name ["
+             << this->waterCurrentLinkName << "] not found, skipping publish\n";
+      return;
+    }
+  }
+
+  if (hd->hydrodynamics.empty()) return;
+
+  // Water current at CoM is in world frame.
+  cgal::Vector3 wcWorld = hd->hydrodynamics.front()->GetWaterCurrentCoM();
+
+  // Rotate into body frame using the CoM world pose.
+  gz::math::Pose3d linkPose = worldPose(hd->link.Entity(), _ecm);
+  auto inertial = _ecm.Component<components::Inertial>(hd->link.Entity());
+  gz::math::Pose3d linkCoMPose = linkPose * inertial->Data().Pose();
+
+  gz::math::Vector3d wcBody =
+    linkCoMPose.Rot().Inverse() *
+    gz::math::Vector3d(wcWorld.x(), wcWorld.y(), wcWorld.z());
+
+  gz::msgs::Vector3d msg;
+  *msg.mutable_header()->mutable_stamp() = gz::msgs::Convert(_info.simTime);
+  gz::msgs::Set(&msg, wcBody);
+  this->waterCurrentPub.Publish(msg);
 }
 
 //////////////////////////////////////////////////

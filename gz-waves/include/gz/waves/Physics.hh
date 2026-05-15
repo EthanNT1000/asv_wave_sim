@@ -436,6 +436,8 @@ class Hydrodynamics
 
   const std::vector<SubmergedTriangleProperties>& GetSubmergedTriangleProperties() const;
 
+  const gz::cgal::Vector3 GetWaterCurrentCoM() const;
+
  private:
   /// \internal
   /// \brief Update the list of submerged triangles.

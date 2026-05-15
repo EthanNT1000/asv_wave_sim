@@ -885,6 +885,11 @@ const std::vector<SubmergedTriangleProperties>& Hydrodynamics::GetSubmergedTrian
   return this->data->submergedTriangleProperties;
 }
 
+const gz::cgal::Vector3 Hydrodynamics::GetWaterCurrentCoM() const
+{
+  return this->data->waterCurrentCoM;
+}
+
 //////////////////////////////////////////////////
 void Hydrodynamics::UpdateSubmergedTriangles()
 {
