@@ -42,6 +42,7 @@
 #include <gz/sim/components/Name.hh>
 #include <gz/sim/components/ParentEntity.hh>
 #include <gz/sim/components/Pose.hh>
+#include <gz/sim/components/Wind.hh>
 #include <gz/sim/components/World.hh>
 
 #include <gz/sim/Link.hh>
@@ -334,6 +335,13 @@ public: waves::WavefieldConstWeakPtr wavefield;
       /// \brief Hydrodynamics parameters for the entire model.
 public: waves::HydrodynamicsParametersPtr hydroParams;
 
+      /// \brief Apply aerodynamic drag to above-waterline triangles.
+public: bool aeroDragOn { false };
+
+      /// \brief Aerodynamic drag coefficient Cd (dimensionless).
+      ///        SDF tag: <cAeroDrag>. Default 1.0 (flat-plate approximation).
+public: double cAeroDrag { 1.0 };
+
       /// \brief Hydrodynamic physics for each Link.
 public: std::vector<HydrodynamicsLinkDataPtr> hydroData;
 
@@ -504,6 +512,16 @@ void Hydrodynamics::Configure(const Entity& _entity,
     sdfHydro = _sdf->GetElementImpl("hydrodynamics");
   }
   this->dataPtr->hydroParams->SetFromSDF(*sdfHydro);
+
+  this->dataPtr->aeroDragOn = waves::Utilities::SdfParamBool(
+      *this->dataPtr->sdf, "aerodynamic_drag_on", false);
+  this->dataPtr->cAeroDrag = waves::Utilities::SdfParamDouble(
+      *this->dataPtr->sdf, "cAeroDrag", 1.0);
+  if (this->dataPtr->aeroDragOn)
+  {
+    gzmsg << "Hydrodynamics: aerodynamic drag enabled"
+          << "  Cd=" << this->dataPtr->cAeroDrag << "\n";
+  }
 
   // Markers
   if (_sdf->HasElement("markers"))
@@ -847,6 +865,21 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
   /// \todo add checks for a valid wavefield and lock the waek_ptr
 
+  // Wind velocity from the world Wind entity — same source the anemometer uses.
+  // Read once per timestep; the value is constant across all links.
+  cgal::Vector3 windVelocity = CGAL::NULL_VECTOR;
+  if (this->aeroDragOn)
+  {
+    Entity windEntity = _ecm.EntityByComponents(components::Wind());
+    if (windEntity != kNullEntity)
+    {
+      auto windComp =
+          _ecm.Component<components::WorldLinearVelocity>(windEntity);
+      if (windComp)
+        windVelocity = waves::ToVector3(windComp->Data());
+    }
+  }
+
   for (auto& hd : this->hydroData)
   {
     // The link pose is required for the water patch, the CoM pose for dynamics.
@@ -910,6 +943,82 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       if (torque.IsFinite())
       {
         hd->link.AddWorldWrench(_ecm, gz::math::Vector3d::Zero, torque);
+      }
+
+      // Aerodynamic drag on above-waterline triangles.
+      //
+      // For each hull face the wind exerts a pressure force:
+      //
+      //   F = ½ · ρ_air · Cd · A_above · vn² · n̂
+      //
+      //   ρ_air  = 1.225 kg/m³  (air density at sea level)
+      //   Cd     = <cAeroDrag>  drag coefficient — 1.0 ≈ flat plate
+      //   A_above = above-waterline area of this triangle (m²)
+      //   vn     = (v_wind − v_hull) · n̂   (m/s, normal component of
+      //            relative wind; zero when wind grazes the face, max
+      //            when wind is head-on)
+      //   n̂      = outward unit normal of the face
+      //
+      // Intuition for vn²:
+      //   Dynamic pressure  p = ½ ρ v²  gives force per unit area.
+      //   Projecting the wind onto the face normal gives vn = v·cos θ,
+      //   so the effective dynamic pressure is ½ ρ vn² — this naturally
+      //   accounts for the cosine taper as the wind angle increases.
+      //   Faces where vn ≤ 0 are on the lee side and are skipped.
+      //
+      // Torque: τ = r × F, where r = triangle centroid − CoM.
+      if (this->aeroDragOn)
+      {
+        static constexpr double kRhoAir = 1.225;  // kg/m³
+
+        cgal::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
+        gz::math::Vector3d aeroForceSum  = gz::math::Vector3d::Zero;
+        gz::math::Vector3d aeroTorqueSum = gz::math::Vector3d::Zero;
+
+        for (const auto& tri : hd->hydrodynamics[j]->GetTriangleProperties())
+        {
+          // Determine above-waterline area.
+          // hh, hm, hl are vertex heights above the water surface (sorted).
+          // For fully above-water faces PopulateSubmergedTriangle returns
+          // early leaving subArea as NaN — handle each case explicitly.
+          double areaAbove;
+          if      (tri.hh <= 0.0) continue;          // fully submerged
+          else if (tri.hl  > 0.0) areaAbove = tri.area;              // fully above
+          else                    areaAbove = tri.area - tri.subArea; // partial
+
+          if (areaAbove < 1e-9) continue;
+
+          // Normalize outward face normal.
+          double nLen = std::sqrt(
+              CGAL::to_double(tri.normal.squared_length()));
+          if (nLen < 1e-9) continue;
+          cgal::Vector3 nHat = tri.normal / nLen;
+
+          // Hull velocity at the triangle centroid (CoM + angular correction).
+          cgal::Vector3 centroid = cgal::Vector3(
+              (tri.vh.x() + tri.vm.x() + tri.vl.x()) / 3.0,
+              (tri.vh.y() + tri.vm.y() + tri.vl.y()) / 3.0,
+              (tri.vh.z() + tri.vm.z() + tri.vl.z()) / 3.0);
+          cgal::Vector3 r = centroid - coMVec;
+          cgal::Vector3 vHull = linVelocity + CGAL::cross_product(angVelocity, r);
+
+          // Normal component of relative wind.
+          cgal::Vector3 vRel = windVelocity - vHull;
+          double vn = CGAL::to_double(vRel * nHat);
+          if (vn <= 0.0) continue;  // lee side — no pressure
+
+          // Aerodynamic force and torque on this face.
+          cgal::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+          cgal::Vector3 tau = CGAL::cross_product(r, f);
+
+          aeroForceSum  += waves::ToGz(f);
+          aeroTorqueSum += waves::ToGz(tau);
+        }
+
+        if (aeroForceSum.IsFinite())
+          hd->link.AddWorldForce(_ecm, aeroForceSum);
+        if (aeroTorqueSum.IsFinite())
+          hd->link.AddWorldWrench(_ecm, gz::math::Vector3d::Zero, aeroTorqueSum);
       }
 
       // Info for Markers
