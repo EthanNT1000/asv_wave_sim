@@ -430,8 +430,8 @@ public: int32_t influxUdpSockfd = -1;
 public: struct sockaddr_in influxAddr {};
 public: static constexpr int32_t influxSendBuffSize = 65507;
 
-public: std::string speedThoughWaterTopicHeader;
-public: std::string speedThoughWaterLinkName;
+public: std::string speedThroughWaterTopicHeader;
+public: std::string speedThroughWaterLinkName;
 public: transport::Node::Publisher speedThroughWaterPub;
 
 ////////// END HYDRODYNAMICS PLUGIN
@@ -542,20 +542,20 @@ void Hydrodynamics::Configure(const Entity& _entity,
     std::string defaultTopic = "/model/" + this->dataPtr->model.Name(_ecm) + "/speed_through_water";
     if (_sdf->HasElement("SpeedThroughWater")) {
       auto sdfWC = _sdf->GetElementImpl("SpeedThroughWater");
-      this->dataPtr->speedThoughWaterTopicHeader =
+      this->dataPtr->speedThroughWaterTopicHeader =
         waves::Utilities::SdfParamString(*sdfWC, "topic", defaultTopic);
-      this->dataPtr->speedThoughWaterLinkName =
+      this->dataPtr->speedThroughWaterLinkName =
         waves::Utilities::SdfParamString(*sdfWC, "link_name", "");
     } else {
-      this->dataPtr->speedThoughWaterTopicHeader = defaultTopic;
+      this->dataPtr->speedThroughWaterTopicHeader = defaultTopic;
     }
     this->dataPtr->speedThroughWaterPub =
       this->dataPtr->node.Advertise<gz::msgs::Vector3d>(
-        this->dataPtr->speedThoughWaterTopicHeader);
-    gzmsg << "Hydrodynamics: publishing water current on ["
-          << this->dataPtr->speedThoughWaterTopicHeader << "]"
-          << (this->dataPtr->speedThoughWaterLinkName.empty() ? "" :
-              " for link [" + this->dataPtr->speedThoughWaterLinkName + "]")
+        this->dataPtr->speedThroughWaterTopicHeader);
+    gzmsg << "Hydrodynamics: publishing speed through water on ["
+          << this->dataPtr->speedThroughWaterTopicHeader << "]"
+          << (this->dataPtr->speedThroughWaterLinkName.empty() ? "" :
+              " for link [" + this->dataPtr->speedThroughWaterLinkName + "]")
           << "\n";
   }
 
@@ -1709,7 +1709,7 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
 
   // Find the target link: use link_name if specified, otherwise the first entry.
   HydrodynamicsLinkData* hd = nullptr;
-  if (this->speedThoughWaterLinkName.empty())
+  if (this->speedThroughWaterLinkName.empty())
   {
     hd = this->hydroData.front().get();
   }
@@ -1718,7 +1718,7 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
     for (auto& entry : this->hydroData)
     {
       auto nameComp = _ecm.Component<components::Name>(entry->link.Entity());
-      if (nameComp && nameComp->Data() == this->speedThoughWaterLinkName)
+      if (nameComp && nameComp->Data() == this->speedThroughWaterLinkName)
       {
         hd = entry.get();
         break;
@@ -1727,7 +1727,7 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
     if (!hd)
     {
       gzwarn << "Hydrodynamics: water_current link_name ["
-             << this->speedThoughWaterLinkName << "] not found, skipping publish\n";
+             << this->speedThroughWaterLinkName << "] not found, skipping publish\n";
       return;
     }
   }
