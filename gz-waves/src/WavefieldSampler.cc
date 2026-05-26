@@ -289,7 +289,7 @@ cgal::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
 {
   cgal::Vector3 v_orb = CGAL::NULL_VECTOR;
   // Set up parameter references
-  const WaveParameters* params = impl_->wavefield_->GetParameters().get();
+  const WaveParameters* params = impl_->wavefield_->GetParametersRaw();
 
   Index n = params->Amplitude_V().size();
   for (Index i = 0; i < n; ++i)

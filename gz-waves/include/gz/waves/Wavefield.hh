@@ -47,6 +47,10 @@ class Wavefield
   /// \brief Get the wave parameters.
   std::shared_ptr<const WaveParameters> GetParameters() const;
 
+  /// \brief Get a raw pointer to the wave parameters. Avoids shared_ptr
+  ///        atomic ref-count operations on the hot path.
+  const WaveParameters* GetParametersRaw() const;
+
   /// \brief Set the wave parameters.
   ///
   /// \param[in] params    The new wave parameters.

@@ -25,6 +25,8 @@
 #include <vector>
 #include <string>
 
+#include <omp.h>
+
 #include <gz/common/MeshManager.hh>
 #include <gz/common/Profiler.hh>
 
@@ -92,23 +94,20 @@ void ApplyPose(
   const cgal::Mesh& _source,
   cgal::Mesh& _target)
 {
-  for (
-    auto&& it = std::make_pair(std::begin(_source.vertices()),
-      std::begin(_target.vertices()));
-      it.first != std::end(_source.vertices()) &&
-    it.second != std::end(_target.vertices());
-    ++it.first, ++it.second)
+  // Source and target share the same topology (target is a copy of source,
+  // no vertex deletions ever occur), so vertex indices are identical 0..N-1.
+  const auto& rot = _pose.Rot();
+  const auto& pos = _pose.Pos();
+  const int n = static_cast<int>(_source.num_vertices());
+  const int nT = std::max(1, std::min(omp_get_max_threads(), n / 32));
+  #pragma omp parallel for schedule(static) num_threads(nT)
+  for (int i = 0; i < n; ++i)
   {
-    const auto& v0 = *it.first;
-    const auto& v1 = *it.second;
-    const cgal::Point3& p0 = _source.point(v0);
-
-    // Affine transformation
-    gz::math::Vector3d gzP0(p0.x(), p0.y(), p0.z());
-    gz::math::Vector3d gzP1 = _pose.Rot().RotateVector(gzP0) + _pose.Pos();
-
-    cgal::Point3& p1 = _target.point(v1);
-    p1 = cgal::Point3(gzP1.X(), gzP1.Y(), gzP1.Z());
+    const cgal::Mesh::Vertex_index vi(i);
+    const cgal::Point3& p0 = _source.point(vi);
+    gz::math::Vector3d gzP1 =
+        rot.RotateVector({p0.x(), p0.y(), p0.z()}) + pos;
+    _target.point(vi) = cgal::Point3(gzP1.X(), gzP1.Y(), gzP1.Z());
   }
 }
 
@@ -972,17 +971,24 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
         static constexpr double kRhoAir = 1.225;  // kg/m³
 
         cgal::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
-        gz::math::Vector3d aeroForceSum  = gz::math::Vector3d::Zero;
-        gz::math::Vector3d aeroTorqueSum = gz::math::Vector3d::Zero;
 
-        for (const auto& tri : hd->hydrodynamics[j]->GetTriangleProperties())
+        const auto& tris = hd->hydrodynamics[j]->GetTriangleProperties();
+        const int nTris = static_cast<int>(tris.size());
+
+        double fx = 0.0, fy = 0.0, fz = 0.0;
+        double tx = 0.0, ty = 0.0, tz = 0.0;
+
+        #pragma omp parallel for reduction(+:fx,fy,fz,tx,ty,tz) schedule(static)
+        for (int ti = 0; ti < nTris; ++ti)
         {
+          const auto& tri = tris[ti];
+
           // Determine above-waterline area.
           // hh, hm, hl are vertex heights above the water surface (sorted).
           // For fully above-water faces PopulateSubmergedTriangle returns
           // early leaving subArea as NaN — handle each case explicitly.
           double areaAbove;
-          if      (tri.hh <= 0.0) continue;          // fully submerged
+          if      (tri.hh <= 0.0) continue;                          // fully submerged
           else if (tri.hl  > 0.0) areaAbove = tri.area;              // fully above
           else                    areaAbove = tri.area - tri.subArea; // partial
 
@@ -1011,9 +1017,16 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
           cgal::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
           cgal::Vector3 tau = CGAL::cross_product(r, f);
 
-          aeroForceSum  += waves::ToGz(f);
-          aeroTorqueSum += waves::ToGz(tau);
+          fx += CGAL::to_double(f.x());
+          fy += CGAL::to_double(f.y());
+          fz += CGAL::to_double(f.z());
+          tx += CGAL::to_double(tau.x());
+          ty += CGAL::to_double(tau.y());
+          tz += CGAL::to_double(tau.z());
         }
+
+        gz::math::Vector3d aeroForceSum(fx, fy, fz);
+        gz::math::Vector3d aeroTorqueSum(tx, ty, tz);
 
         if (aeroForceSum.IsFinite())
           hd->link.AddWorldForce(_ecm, aeroForceSum);

@@ -55,14 +55,16 @@ gz_create_core_library(SOURCES ${sources} CXX_STANDARD ${CMAKE_CXX_STANDARD})
 
 target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
   PUBLIC
-  gz-math${GZ_MATH_VER}
-  gz-msgs${GZ_MSGS_VER}::gz-msgs${GZ_MSGS_VER}
-  gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER}
-  gz-common${GZ_COMMON_VER}::graphics
-  gz-common${GZ_COMMON_VER}::profiler
-  gz-transport${GZ_TRANSPORT_VER}::gz-transport${GZ_TRANSPORT_VER}
-  sdformat${SDF_VER}::sdformat${SDF_VER}
-  ${FFT_LIBRARIES}
+    gz-math${GZ_MATH_VER}
+    gz-msgs${GZ_MSGS_VER}::gz-msgs${GZ_MSGS_VER}
+    gz-common${GZ_COMMON_VER}::gz-common${GZ_COMMON_VER}
+    gz-common${GZ_COMMON_VER}::graphics
+    gz-common${GZ_COMMON_VER}::profiler
+    gz-transport${GZ_TRANSPORT_VER}::gz-transport${GZ_TRANSPORT_VER}
+    sdformat${SDF_VER}::sdformat${SDF_VER}
+    ${FFT_LIBRARIES}
+  PRIVATE
+    OpenMP::OpenMP_CXX
 )
 if (${CGAL_VERSION_MAJOR} GREATER_EQUAL 6)
   target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}

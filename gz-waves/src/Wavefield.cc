@@ -128,6 +128,12 @@ std::shared_ptr<const WaveParameters> Wavefield::GetParameters() const
 }
 
 //////////////////////////////////////////////////
+const WaveParameters* Wavefield::GetParametersRaw() const
+{
+  return impl_->params_.get();
+}
+
+//////////////////////////////////////////////////
 void Wavefield::SetParameters(std::shared_ptr<WaveParameters> params)
 {
   impl_->params_ = params;

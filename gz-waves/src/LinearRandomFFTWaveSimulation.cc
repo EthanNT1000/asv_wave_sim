@@ -20,6 +20,10 @@
 
 #include <fftw3.h>
 
+#ifdef USE_FFTW3_OMP
+#include <omp.h>
+#endif
+
 #include <complex>
 #include <random>
 #include <unordered_map>
@@ -377,14 +381,18 @@ void LinearRandomFFTWaveSimulation::Impl::ComputeCurrentAmplitudes(
   auto psi_root = cap_psi_2s_root_.reshaped();
 
   // time update for unique omega_k (reduce number of calls to sincos)
-  for (size_t uidx = 0; uidx < uomega_k_.size(); ++uidx)
+  const int n_uomega = static_cast<int>(uomega_k_.size());
+  #pragma omp parallel for schedule(static)
+  for (int uidx = 0; uidx < n_uomega; ++uidx)
   {
     double wt = uomega_k_[uidx] * time;
     ucos_wt_(uidx) = cos(wt);
     usin_wt_(uidx) = sin(wt);
   }
 
-  // flattened index version
+  // flattened index version — each (ikx, iky) writes to a unique idx, reads
+  // from cdx only (no write to cdx here), so all iterations are independent.
+  #pragma omp parallel for collapse(2) schedule(static)
   for (Index ikx = 1; ikx < nx_; ++ikx)
   {
     for (Index iky = 1; iky < ny_/2 + 1; ++iky)
@@ -450,12 +458,15 @@ void LinearRandomFFTWaveSimulation::Impl::ComputeCurrentAmplitudes(
   const complex iunit(0.0, 1.0);
   const complex czero(0.0, 0.0);
 
+  // Each (ikx, iky) reads zhat_ at a unique idx and writes to independent
+  // positions in all fft_* arrays — fully parallel.
+  #pragma omp parallel for collapse(2) schedule(static)
   for (Index ikx = 0; ikx < nx_; ++ikx)
   {
-    double kx = kx_fft_(ikx);
-    double kx2 = kx*kx;
     for (Index iky = 0; iky < ny_/2 + 1; ++iky)
     {
+      double kx = kx_fft_(ikx);
+      double kx2 = kx*kx;
       double ky = ky_fft_(iky);
       double ky2 = ky*ky;
       double k = sqrt(kx2 + ky2);
@@ -568,6 +579,12 @@ void LinearRandomFFTWaveSimulation::Impl::CreateFFTWPlans()
   ///       planning, so allocate here before initialising.
   ///       https://www.fftw.org/fftw3_doc/Complex-DFTs.html
 
+#ifdef USE_FFTW3_OMP
+  // fftw_init_threads is idempotent — safe to call on every construction.
+  fftw_init_threads();
+  fftw_plan_with_nthreads(omp_get_max_threads());
+#endif
+
   // allocate storage for Fourier coefficients
   fft_h_      = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_/2+1);
   fft_h_ikx_  = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_/2+1);
@@ -660,6 +677,10 @@ void LinearRandomFFTWaveSimulation::Impl::DestroyFFTWPlans()
   fftw_destroy_plan(fft_plan5_);
   fftw_destroy_plan(fft_plan6_);
   fftw_destroy_plan(fft_plan7_);
+
+#ifdef USE_FFTW3_OMP
+  fftw_cleanup_threads();
+#endif
 }
 
 //////////////////////////////////////////////////

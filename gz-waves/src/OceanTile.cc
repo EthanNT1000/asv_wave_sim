@@ -15,6 +15,8 @@
 
 #include "gz/waves/OceanTile.hh"
 
+#include <omp.h>
+
 #include <Eigen/Dense>
 
 #include <algorithm>
@@ -644,6 +646,7 @@ void OceanTilePrivate<gz::math::Vector3d>::ComputeTBN(
   }
 
   // 2. Normalise each vertex's tangent space basis.
+  #pragma omp parallel for schedule(static)
   for (size_t i = 0; i < vertices.size(); ++i)
   {
     tangents[i].Normalize();
@@ -811,7 +814,8 @@ void OceanTilePrivate<Vector3>::UpdateVertices(double time)
     const Index nx_plus1  = nx_ + 1;
     const Index ny_plus1  = ny_ + 1;
 
-    for (Index iy=0; iy < ny_; ++iy)
+    #pragma omp parallel for collapse(2) schedule(static)
+    for (Index iy = 0; iy < ny_; ++iy)
     {
       for (Index ix=0; ix < nx_; ++ix)
       {

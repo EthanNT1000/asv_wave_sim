@@ -46,6 +46,7 @@
 #define GZ_WAVES_PHYSICS_HH_
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "gz/waves/CGALTypes.hh"
@@ -452,25 +453,39 @@ class Hydrodynamics
   /// \param[out] _triProps The computed properties for the input triangle.
   void PopulateSubmergedTriangle(
     const cgal::Triangle& _triangle,
-    TriangleProperties& _triProps);
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps,
+    std::vector<cgal::Line>& _waterlines);
 
   /// internal
   /// \brief Split a triangle with one submerged vertex.
   ///
   /// \param[in] _triProps The properties for the partially submerged triangle.
-  void SplitPartiallySubmergedTriangle1(TriangleProperties& _triProps);
+  void SplitPartiallySubmergedTriangle1(
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps,
+    std::vector<cgal::Line>& _waterlines);
 
   /// internal
   /// \brief Split a triangle with two submerged vertices.
   ///
   /// \param[in] _triProps The properties for the partially submerged triangle.
-  void SplitPartiallySubmergedTriangle2(TriangleProperties& _triProps);
+  void SplitPartiallySubmergedTriangle2(
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps,
+    std::vector<cgal::Line>& _waterlines);
 
   /// internal
   /// \brief Add a fully submerged triangle.
   ///
   /// \param[in] _triProps The properties for the fully submerged triangle.
-  void AddFullySubmergedTriangle(TriangleProperties& _triProps);
+  void AddFullySubmergedTriangle(
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps);
 
   /// internal
   /// \brief Surface and submerged surface area.
@@ -489,9 +504,16 @@ class Hydrodynamics
   void ComputeDynamicFoilGeometry();
 
   /// internal
-  /// \brief Calculate normal and tangential velocities for
-  ///        each submerged triangle.
-  void ComputePointVelocities(const std::chrono::_V2::steady_clock::duration& simTime);
+  /// \brief Compute all velocity fields on one submerged triangle.
+  /// Mutates props in place; must be called before any force function.
+  static void ComputePointVelocities(
+      SubmergedTriangleProperties& props,
+      const cgal::Point3& position,
+      const cgal::Vector3& v_body,
+      const cgal::Vector3& omega,
+      const WavefieldSampler& wavefieldSampler,
+      double t,
+      const WaterCurrentGrid& currentGrid);
 
   /// internal
   /// \brief Sample the water current at the center of mass.
@@ -502,24 +524,52 @@ class Hydrodynamics
   double ComputeReynoldsNumber() const;
 
   /// internal
-  /// \brief Buoyancy force calculation.
-  void ComputeBuoyancyForce();
-
-  /// internal
-  /// \brief Damping force calculation.
+  /// \brief Damping force calculation (whole-body, not per-triangle).
   void ComputeDampingForce();
 
   /// internal
-  /// \brief Viscous drag force calculation.
-  void ComputeViscousDragForce();
+  /// \brief Buoyancy force for one submerged triangle.
+  /// Returns {force, torque} contribution to accumulate.
+  /// Also writes the buoyancy force and center-of-pressure to bForce_out / bCenter_out.
+  static std::pair<cgal::Vector3, cgal::Vector3> ComputeBuoyancyForce(
+      const WavefieldSampler& wavefieldSampler,
+      const cgal::Triangle& subTri,
+      const cgal::Point3& position,
+      cgal::Vector3& bForce_out,
+      cgal::Point3& bCenter_out);
 
   /// internal
-  /// \brief 'Pressure drag' force calculation.
-  void ComputePressureDragForce();
+  /// \brief Viscous drag force for one submerged triangle.
+  /// Returns {force, torque} contribution to accumulate.
+  static std::pair<cgal::Vector3, cgal::Vector3> ComputeViscousDragForce(
+      const SubmergedTriangleProperties& props,
+      double rho,
+      double cF);
 
   /// internal
-  /// \brief Foil lift force calculation.
-  void ComputeFoilLiftForce();
+  /// \brief Pressure drag force for one submerged triangle.
+  /// Returns {force, torque} contribution to accumulate.
+  static std::pair<cgal::Vector3, cgal::Vector3> ComputePressureDragForce(
+      const SubmergedTriangleProperties& props,
+      double cPDrag1, double cPDrag2, double fPDrag,
+      double cSDrag1, double cSDrag2, double fSDrag,
+      double vRDrag);
+
+  /// internal
+  /// \brief Foil lift force for one submerged triangle.
+  /// Returns {force, torque} contribution; returns zero pair if the triangle
+  /// is not a qualifying planing surface.
+  static std::pair<cgal::Vector3, cgal::Vector3> ComputeFoilLiftForce(
+      const SubmergedTriangleProperties& props,
+      double rho,
+      double Cl_alpha, double alpha_stall, double Cl_max,
+      double AR, double bottomThresh);
+
+  /// internal
+  /// \brief Fused single-pass: point velocities + buoyancy + viscous drag +
+  ///        pressure drag + foil lift in one parallel loop over submerged tris.
+  void ComputeAllSubmergedForces(
+      const std::chrono::_V2::steady_clock::duration& simTime);
 
   /// \internal
   /// \brief Pointer to the class private data.

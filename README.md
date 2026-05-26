@@ -20,6 +20,8 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 
 - The simulation uses the [CGAL](https://www.cgal.org/) library for mesh manipulation and [FFTW](http://www.fftw.org/) to compute Fourier transforms. Both libraries are licensed GPL-3.0.
 
+- [OpenMP](https://www.openmp.org/) is used to parallelise wave mesh updates, hydrodynamics force calculations, and FFT execution across multiple CPU cores.
+
 ## Ubuntu
 
 - Ubuntu 22.04 (Jammy)
@@ -32,6 +34,30 @@ sudo apt-get update
 sudo apt-get install libcgal-dev libfftw3-dev
 ```
 
+### OpenMP (Ubuntu)
+
+OpenMP is included with GCC and requires no extra package. Verify it is available:
+
+```bash
+echo '#include <omp.h>
+int main() { return omp_get_max_threads(); }' | g++ -fopenmp -x c++ - -o /tmp/omp_check && echo "OpenMP OK"
+```
+
+If you are building with **Clang** instead of GCC, install the LLVM OpenMP runtime:
+
+```bash
+sudo apt-get install libomp-dev
+```
+
+To enable multi-threaded FFTW (optional but recommended for large wave grids), install the OpenMP-enabled FFTW variant:
+
+```bash
+sudo apt-get install libfftw3-dev
+# libfftw3-dev already includes the threaded library (libfftw3_omp)
+# verify with:
+ls /usr/lib/x86_64-linux-gnu/libfftw3_omp*
+```
+
 ## macOS
 
 - macOS 12.6 (Monterey)
@@ -42,6 +68,36 @@ Install CGAL and FFTW:
 ```zsh
 brew update
 brew install cgal fftw
+```
+
+### OpenMP (macOS)
+
+Apple Clang does not ship with OpenMP. Install the LLVM OpenMP runtime via Homebrew:
+
+```zsh
+brew install libomp
+```
+
+Then tell CMake where to find it by adding these flags to your `colcon build` command:
+
+```zsh
+-DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
+-DOpenMP_CXX_LIB_NAMES="omp" \
+-DOpenMP_omp_LIBRARY="$(brew --prefix libomp)/lib/libomp.dylib"
+```
+
+Full macOS build command with OpenMP:
+
+```zsh
+colcon build --symlink-install --merge-install --cmake-args \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DBUILD_TESTING=ON \
+  -DCMAKE_CXX_STANDARD=17 \
+  -DCMAKE_MACOSX_RPATH=FALSE \
+  -DCMAKE_INSTALL_NAME_DIR=$(pwd)/install/lib \
+  -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I$(brew --prefix libomp)/include" \
+  -DOpenMP_CXX_LIB_NAMES="omp" \
+  -DOpenMP_omp_LIBRARY="$(brew --prefix libomp)/lib/libomp.dylib"
 ```
 
 ## Installation

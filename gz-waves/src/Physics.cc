@@ -44,6 +44,7 @@
 #include "gz/waves/Wavefield.hh"
 #include "gz/waves/WavefieldSampler.hh"
 
+#include <omp.h>
 #include <random>
 
 namespace gz
@@ -775,6 +776,13 @@ class HydrodynamicsPrivate
   std::vector<SubmergedTriangleProperties> submergedTriangleProperties;
   std::vector<cgal::Line> waterline;
 
+  /// \brief Per-thread scratch buffers for the parallel face loop in
+  ///        UpdateSubmergedTriangles. Persisted across steps to avoid
+  ///        malloc/free on every physics tick.
+  std::vector<std::vector<cgal::Triangle>>              tl_subTris;
+  std::vector<std::vector<SubmergedTriangleProperties>> tl_subProps;
+  std::vector<std::vector<cgal::Line>>                  tl_waterlines;
+
   double area;
 
   double submergedArea;
@@ -805,6 +813,12 @@ Hydrodynamics::Hydrodynamics(
   this->data->linVelocity = CGAL::NULL_VECTOR;
   this->data->angVelocity = CGAL::NULL_VECTOR;
   this->data->waterlineLength = 0.0;
+
+  // Add the per-vertex depth property map once; reused every physics step.
+  auto& ncMesh = const_cast<cgal::Mesh&>(*_linkMesh);
+  this->data->depths =
+      ncMesh.add_property_map<cgal::Mesh::Vertex_index, double>(
+          "v:depth", 0).first;
 }
 
 //////////////////////////////////////////////////
@@ -833,19 +847,9 @@ void Hydrodynamics::Update(
   this->ComputeWaterlineLength();
   this->ComputeWaterlineBeam();
   this->ComputeDynamicFoilGeometry();
-  this->ComputePointVelocities(simTime);
-  this->ComputeBuoyancyForce();
-
   this->SampleWaterCurrentCoM();
 
-  if (this->data->params->ViscousDragOn())
-    this->ComputeViscousDragForce();
-
-  if (this->data->params->PressureDragOn())
-    this->ComputePressureDragForce();
-
-  if (this->data->params->FoilLiftOn())
-    this->ComputeFoilLiftForce();
+  this->ComputeAllSubmergedForces(simTime);
 
   if (this->data->params->DampingOn())
     this->ComputeDampingForce();
@@ -893,77 +897,108 @@ const gz::cgal::Vector3 Hydrodynamics::GetWaterCurrentCoM() const
 //////////////////////////////////////////////////
 void Hydrodynamics::UpdateSubmergedTriangles()
 {
+  // submergedTriangles/submergedTriangleProperties/waterline are rebuilt every
+  // step; triangleProperties is resize()-only so it skips re-init when nFaces
+  // is unchanged (hull mesh is fixed at runtime).
   this->data->submergedTriangles.clear();
-  this->data->triangleProperties.clear();
   this->data->submergedTriangleProperties.clear();
   this->data->waterline.clear();
 
   auto& linkMesh = *this->data->linkMesh;
   auto& wavefieldSampler = *this->data->wavefieldSampler;
 
-  // @TODO_FRAGILE - prefer not to const_cast... assign prop map at creation.
-  // Compute depths
-  auto& ncLinkMesh = const_cast<cgal::Mesh&>(*this->data->linkMesh);
-  auto pair = ncLinkMesh.add_property_map<
-      cgal::Mesh::Vertex_index, double>("v:depth", 0);
-  this->data->depths = pair.first;
-  for (auto&& v : linkMesh.vertices())
+  // Compute depths — property map initialized once in constructor.
+  // Vertex/face indices are 0..N-1 (mesh topology never changes, no deletions).
+  const int nVerts = static_cast<int>(linkMesh.num_vertices());
+  #pragma omp parallel for schedule(static)
+  for (int i = 0; i < nVerts; ++i)
   {
-    this->data->depths[v] = wavefieldSampler.ComputeDepth(linkMesh.point(v));
+    const cgal::Mesh::Vertex_index vi(i);
+    this->data->depths[vi] =
+        wavefieldSampler.ComputeDepth(linkMesh.point(vi));
   }
 
-  // Get a list of the meshes exterior triangles
-  for (auto&& face : linkMesh.faces())
+  const int nFaces = static_cast<int>(linkMesh.num_faces());
+  this->data->triangleProperties.resize(nFaces);
+
+  // Thread-local output buffers — threads push_back independently, merged below.
+  // Cap threads so that each thread gets at least 32 faces; with fewer faces
+  // per thread the OpenMP barrier overhead exceeds the per-iteration work.
+  const int nThreads = std::max(1, std::min(omp_get_max_threads(), nFaces / 32));
+
+  // Resize persistent per-thread buffers only when thread count changes, then
+  // clear each step. This avoids malloc/free on every physics tick.
+  auto& tl_subTris    = this->data->tl_subTris;
+  auto& tl_subProps   = this->data->tl_subProps;
+  auto& tl_waterlines = this->data->tl_waterlines;
+  if (static_cast<int>(tl_subTris.size()) != nThreads)
   {
-    cgal::Triangle triangle = Geometry::MakeTriangle(linkMesh, face);
+    const int reservePerThread = (nFaces / nThreads) * 2 + 4;
+    tl_subTris.resize(nThreads);
+    tl_subProps.resize(nThreads);
+    tl_waterlines.resize(nThreads);
+    for (int t = 0; t < nThreads; ++t)
+    {
+      tl_subTris[t].reserve(reservePerThread);
+      tl_subProps[t].reserve(reservePerThread);
+      tl_waterlines[t].reserve(reservePerThread / 2);
+    }
+  }
+  for (int t = 0; t < nThreads; ++t)
+  {
+    tl_subTris[t].clear();
+    tl_subProps[t].clear();
+    tl_waterlines[t].clear();
+  }
 
-    TriangleProperties triProps;
-    // triProps.index = i;
+  #pragma omp parallel for schedule(static) num_threads(nThreads)
+  for (int i = 0; i < nFaces; ++i)
+  {
+    const int tid = omp_get_thread_num();
+    const cgal::Mesh::Face_index fi(i);
+    cgal::Triangle triangle = Geometry::MakeTriangle(linkMesh, fi);
+
+    TriangleProperties& triProps = this->data->triangleProperties[i];
     triProps.normal = Geometry::Normal(triangle);
-    triProps.area = Geometry::TriangleArea(triangle);
-
-    // @TODO_OPTIMISE - compute depth once for each vertex then assign
-    // height to each triangle
-    // triProps.heightMap =
-    //      Physics::ComputeHeightMap(wavefieldSampler, triangle);
+    triProps.area   = Geometry::TriangleArea(triangle);
 
     // Note sign change for height.
     const auto& rng = CGAL::vertices_around_face(
-        linkMesh.halfedge(face), linkMesh);
-    for (
-      auto&& it = std::make_pair(std::begin(rng), 0);
-      it.first != std::end(rng);
-      ++it.first, ++it.second)
-    {
-      triProps.heightMap[it.second] = -this->data->depths[*it.first];
-    }
+        linkMesh.halfedge(fi), linkMesh);
+    int j = 0;
+    for (auto v = std::begin(rng); v != std::end(rng); ++v, ++j)
+      triProps.heightMap[j] = -this->data->depths[*v];
 
-    // Populate the submerged sub-triangles
-    this->PopulateSubmergedTriangle(triangle, triProps);
-
-    this->data->triangleProperties.push_back(triProps);
-    // @DEBUG_INFO
-    // DebugPrint(triangle);
-    // DebugPrint(triProps);
+    this->PopulateSubmergedTriangle(
+        triangle, triProps,
+        tl_subTris[tid], tl_subProps[tid], tl_waterlines[tid]);
   }
 
-  // @DEBUG_INFO
-  // gzmsg << "TriCount: " << this->data->triangleProperties.size() << "\n";
-  // for (auto triProps : this->data->triangleProperties)
-  // {
-  //   DebugPrint(triProps);
-  // }
-  // gzmsg << "SubTriCount: " << this->data->submergedTriangles.size() << "\n";
-  // for (auto subTriProps : this->data->submergedTriangleProperties)
-  // {
-  //   DebugPrint(subTriProps);
-  // }
+  // Serial merge of per-thread results into shared data.
+  for (int t = 0; t < nThreads; ++t)
+  {
+    this->data->submergedTriangles.insert(
+        this->data->submergedTriangles.end(),
+        std::make_move_iterator(tl_subTris[t].begin()),
+        std::make_move_iterator(tl_subTris[t].end()));
+    this->data->submergedTriangleProperties.insert(
+        this->data->submergedTriangleProperties.end(),
+        std::make_move_iterator(tl_subProps[t].begin()),
+        std::make_move_iterator(tl_subProps[t].end()));
+    this->data->waterline.insert(
+        this->data->waterline.end(),
+        std::make_move_iterator(tl_waterlines[t].begin()),
+        std::make_move_iterator(tl_waterlines[t].end()));
+  }
 }
 
 //////////////////////////////////////////////////
 void Hydrodynamics::PopulateSubmergedTriangle(
   const cgal::Triangle& _triangle,
-  TriangleProperties& _triProps)
+  TriangleProperties& _triProps,
+  std::vector<cgal::Triangle>& _subTris,
+  std::vector<SubmergedTriangleProperties>& _subProps,
+  std::vector<cgal::Line>& _waterlines)
 {
   // Calculations
   const Index H = 0, M = 1, L = 2;
@@ -985,19 +1020,22 @@ void Hydrodynamics::PopulateSubmergedTriangle(
       {
         // no-op
       } else {
-        this->SplitPartiallySubmergedTriangle1(_triProps);
+        this->SplitPartiallySubmergedTriangle1(_triProps, _subTris, _subProps, _waterlines);
       }
     } else {
-      this->SplitPartiallySubmergedTriangle2(_triProps);
+      this->SplitPartiallySubmergedTriangle2(_triProps, _subTris, _subProps, _waterlines);
     }
   } else {
-    this->AddFullySubmergedTriangle(_triProps);
+    this->AddFullySubmergedTriangle(_triProps, _subTris, _subProps);
   }
 }
 
 //////////////////////////////////////////////////
 void Hydrodynamics::SplitPartiallySubmergedTriangle1(
-    TriangleProperties& _triProps)
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps,
+    std::vector<cgal::Line>& _waterlines)
 {
   cgal::Vector3& n = _triProps.normal;
   cgal::Point3& vh = _triProps.vh;
@@ -1013,11 +1051,6 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle1(
   cgal::Point3 vmi = vl + (vm - vl) * tm;
   cgal::Point3 vhi = vl + (vh - vl) * th;
 
-  // @DEBUG_INFO
-  // gzmsg << "index:         " << _triProps.index << "\n";
-  // gzmsg << "vmi:           " << vmi << "\n";
-  // gzmsg << "vhi:           " << vhi << "\n";
-
   // Create the new submerged triangle
   cgal::Triangle tri0(vl, vmi, vhi);
   if (CGAL::scalar_product(n, Geometry::Normal(tri0)) < 0.0)
@@ -1025,7 +1058,7 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle1(
     // Change orientation
     tri0 = cgal::Triangle(vl, vhi, vmi);
   }
-  this->data->submergedTriangles.push_back(tri0);
+  _subTris.push_back(tri0);
 
   // Properties of the submerged tri0
   SubmergedTriangleProperties subTriProps0;
@@ -1033,19 +1066,21 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle1(
   subTriProps0.normal = Geometry::Normal(tri0);
   subTriProps0.centroid = Geometry::TriangleCentroid(tri0);
   subTriProps0.area = Geometry::TriangleArea(tri0);
-  this->data->submergedTriangleProperties.push_back(subTriProps0);
+  _subProps.push_back(subTriProps0);
 
   // Fraction of original triangle submerged.
   _triProps.subArea = subTriProps0.area;
 
   // Create a new line (for the water line)
-  cgal::Line line(vmi, vhi);
-  this->data->waterline.push_back(line);
+  _waterlines.emplace_back(vmi, vhi);
 }
 
 //////////////////////////////////////////////////
 void Hydrodynamics::SplitPartiallySubmergedTriangle2(
-    TriangleProperties& _triProps)
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps,
+    std::vector<cgal::Line>& _waterlines)
 {
   cgal::Vector3& n = _triProps.normal;
   cgal::Point3& vh = _triProps.vh;
@@ -1074,8 +1109,8 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle2(
     tri1 = cgal::Triangle(vli, vmi, vl);
   }
 
-  this->data->submergedTriangles.push_back(tri0);
-  this->data->submergedTriangles.push_back(tri1);
+  _subTris.push_back(tri0);
+  _subTris.push_back(tri1);
 
   // Properties of the submerged tri0
   SubmergedTriangleProperties subTriProps0;
@@ -1083,7 +1118,7 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle2(
   subTriProps0.normal = Geometry::Normal(tri0);
   subTriProps0.centroid = Geometry::TriangleCentroid(tri0);
   subTriProps0.area = Geometry::TriangleArea(tri0);
-  this->data->submergedTriangleProperties.push_back(subTriProps0);
+  _subProps.push_back(subTriProps0);
 
   // Properties of the submerged tri1
   SubmergedTriangleProperties subTriProps1;
@@ -1091,19 +1126,20 @@ void Hydrodynamics::SplitPartiallySubmergedTriangle2(
   subTriProps1.normal = Geometry::Normal(tri1);
   subTriProps1.centroid = Geometry::TriangleCentroid(tri1);
   subTriProps1.area = Geometry::TriangleArea(tri1);
-  this->data->submergedTriangleProperties.push_back(subTriProps1);
+  _subProps.push_back(subTriProps1);
 
   // Fraction of original triangle submerged.
   _triProps.subArea = subTriProps0.area + subTriProps1.area;
 
   // Create a new line (for the water line)
-  cgal::Line line(vmi, vli);
-  this->data->waterline.push_back(line);
+  _waterlines.emplace_back(vmi, vli);
 }
 
 //////////////////////////////////////////////////
 void Hydrodynamics::AddFullySubmergedTriangle(
-    TriangleProperties& _triProps)
+    TriangleProperties& _triProps,
+    std::vector<cgal::Triangle>& _subTris,
+    std::vector<SubmergedTriangleProperties>& _subProps)
 {
   // Add the full triangle
   cgal::Vector3& n = _triProps.normal;
@@ -1117,7 +1153,7 @@ void Hydrodynamics::AddFullySubmergedTriangle(
   {
     tri = cgal::Triangle(vm, vh, vl);
   }
-  this->data->submergedTriangles.push_back(tri);
+  _subTris.push_back(tri);
 
   // Properties of the submerged triangle
   SubmergedTriangleProperties subTriProps;
@@ -1125,7 +1161,7 @@ void Hydrodynamics::AddFullySubmergedTriangle(
   subTriProps.normal = _triProps.normal;
   subTriProps.centroid = Geometry::TriangleCentroid(tri);
   subTriProps.area = _triProps.area;
-  this->data->submergedTriangleProperties.push_back(subTriProps);
+  _subProps.push_back(subTriProps);
 
   // Fraction of original triangle submerged.
   _triProps.subArea = subTriProps.area;
@@ -1236,69 +1272,47 @@ void Hydrodynamics::ComputeDynamicFoilGeometry()
 //////////////////////////////////////////////////
 // Compute the point velocity at a triangles centroid
 void Hydrodynamics::ComputePointVelocities(
-  const std::chrono::_V2::steady_clock::duration& simTime)
+    SubmergedTriangleProperties& props,
+    const cgal::Point3& position,
+    const cgal::Vector3& v_body,
+    const cgal::Vector3& omega,
+    const WavefieldSampler& wavefieldSampler,
+    double t,
+    const WaterCurrentGrid& currentGrid)
 {
-  auto& position = this->data->position;
-  auto& v = this->data->linVelocity;
-  auto& omega = this->data->angVelocity;
+  props.xr = props.centroid - position;
+  props.vp = v_body + CGAL::cross_product(omega, props.xr);
 
-  for (auto&& subTriProps : this->data->submergedTriangleProperties)
-  {
-    // relative position of the centroid wrt CoM
-    subTriProps.xr = subTriProps.centroid - position;
+  const double cx = props.centroid.x();
+  const double cy = props.centroid.y();
+  const double cz = props.centroid.z();
 
-    // vp = v + omega x xr
-    subTriProps.vp = v + CGAL::cross_product(omega, subTriProps.xr);
+  props.v_orbital = wavefieldSampler.ComputeOrbitalVelocity(cx, cy, cz, t);
+  props.v_current = currentGrid.SampleAt(cx, cy);
+  props.v_fluid   = props.v_orbital + props.v_current;
+  props.v_rel     = props.vp - props.v_fluid;
+  props.v_rel_mag = std::sqrt(CGAL::to_double(props.v_rel.squared_length()));
 
-    // NEW: wave orbital velocity at triangle centroid (with depth)
-    double cx = subTriProps.centroid.x();
-    double cy = subTriProps.centroid.y();
-    double cz = subTriProps.centroid.z();   // negative = below surface
+  const double v_rel_dot_n = CGAL::to_double(
+      CGAL::scalar_product(props.v_rel, props.normal));
+  props.v_rel_n = props.normal * v_rel_dot_n;
+  props.v_rel_t = props.v_rel - props.v_rel_n;
 
-    subTriProps.v_orbital = this->data->wavefieldSampler->ComputeOrbitalVelocity(cx, cy, cz,
-      std::chrono::duration<double>(simTime).count());
-    subTriProps.v_current =
-      this->data->params->GetWaterCurrentGrid().SampleAt(cx, cy);
-    subTriProps.v_fluid = subTriProps.v_orbital + subTriProps.v_current;
+  const double v_rel_t_mag = std::sqrt(
+      CGAL::to_double(props.v_rel_t.squared_length()));
+  props.alpha = std::atan2(v_rel_dot_n, v_rel_t_mag + 1e-9);
 
-    // NEW: relative velocity — hull velocity minus fluid velocity
-    // (this replaces the implicit "fluid = still" assumption)
-    subTriProps.v_rel = subTriProps.vp - subTriProps.v_fluid;
-    subTriProps.v_rel_mag = std::sqrt(CGAL::to_double(subTriProps.v_rel.squared_length()));
-
-    // Decompose v_rel into normal and tangential components
-    double v_rel_dot_n = CGAL::to_double(
-      CGAL::scalar_product(subTriProps.v_rel, subTriProps.normal));
-    subTriProps.v_rel_n = subTriProps.normal * v_rel_dot_n;
-    subTriProps.v_rel_t = subTriProps.v_rel - subTriProps.v_rel_n;
-
-    // Angle of attack: angle between v_rel and the surface plane
-    double v_rel_t_mag = std::sqrt(
-      CGAL::to_double(subTriProps.v_rel_t.squared_length()));
-    subTriProps.alpha = std::atan2(
-      v_rel_dot_n,
-      v_rel_t_mag + 1e-9);  // epsilon avoids divide-by-zero
-
-    // Existing: keep vn, vt, up, cosTheta using v_rel
-    // (previously used vp — now use v_rel for all drag calculations too)
-    subTriProps.up = (subTriProps.v_rel_mag > 1e-9)
-      ? subTriProps.v_rel / subTriProps.v_rel_mag
+  props.up = (props.v_rel_mag > 1e-9)
+      ? props.v_rel / props.v_rel_mag
       : CGAL::NULL_VECTOR;
-
-    subTriProps.cosTheta = CGAL::scalar_product(subTriProps.up, subTriProps.normal);
-
-    subTriProps.vn = subTriProps.normal * subTriProps.cosTheta * subTriProps.v_rel_mag;
-
-    subTriProps.vt = subTriProps.v_rel - subTriProps.vn;
-
-    subTriProps.ut = (v_rel_t_mag > 1e-9)
-      ? subTriProps.v_rel_t / v_rel_t_mag
+  props.cosTheta = CGAL::scalar_product(props.up, props.normal);
+  props.vn = props.normal * props.cosTheta * props.v_rel_mag;
+  props.vt = props.v_rel - props.vn;
+  props.ut = (v_rel_t_mag > 1e-9)
+      ? props.v_rel_t / v_rel_t_mag
       : CGAL::NULL_VECTOR;
-
-    subTriProps.uf = -subTriProps.ut;
-
-    subTriProps.vf = subTriProps.uf * subTriProps.v_rel_mag;
-  }
+  props.uf = -props.ut;
+  props.vf = props.uf * props.v_rel_mag;
 }
 
 ///////////////////////////////////////////////////
@@ -1327,36 +1341,23 @@ double Hydrodynamics::ComputeReynoldsNumber() const
 }
 
 //////////////////////////////////////////////////
-void Hydrodynamics::ComputeBuoyancyForce()
+std::pair<cgal::Vector3, cgal::Vector3>
+Hydrodynamics::ComputeBuoyancyForce(
+    const WavefieldSampler& wavefieldSampler,
+    const cgal::Triangle& subTri,
+    const cgal::Point3& position,
+    cgal::Vector3& bForce_out,
+    cgal::Point3& bCenter_out)
 {
-  cgal::Vector3 sumForce  = CGAL::NULL_VECTOR;
-  cgal::Vector3 sumTorque = CGAL::NULL_VECTOR;
-
-  this->data->fBuoyancy.clear();
-  this->data->cBuoyancy.clear();
-
-  // Calculate the buoyancy force for the submerged triangles
-  auto& position  =  this->data->position;
-  auto& wavefieldSampler = *this->data->wavefieldSampler;
-  for (auto&& subTri : this->data->submergedTriangles)
-  {
-    // Force and center of pressure.
-    cgal::Point3 center = CGAL::ORIGIN;
-    cgal::Vector3 force = CGAL::NULL_VECTOR;
-    Physics::BuoyancyForceAtCenterOfPressure(
-      wavefieldSampler, subTri, center, force);
-    this->data->fBuoyancy.push_back(force);
-    this->data->cBuoyancy.push_back(center);
-
-    // Torque
-    cgal::Vector3 xr = center - position;
-    cgal::Vector3 torque = CGAL::cross_product(xr, force);
-    sumForce += force;
-    sumTorque += torque;
-  }
-
-  this->data->force  += sumForce;
-  this->data->torque += sumTorque;
+  cgal::Point3  bCenter = CGAL::ORIGIN;
+  cgal::Vector3 bForce  = CGAL::NULL_VECTOR;
+  Physics::BuoyancyForceAtCenterOfPressure(
+      wavefieldSampler, subTri, bCenter, bForce);
+  bForce_out  = bForce;
+  bCenter_out = bCenter;
+  const cgal::Vector3 xr     = bCenter - position;
+  const cgal::Vector3 torque = CGAL::cross_product(xr, bForce);
+  return {bForce, torque};
 }
 
 //////////////////////////////////////////////////
@@ -1405,150 +1406,155 @@ void Hydrodynamics::ComputeDampingForce()
 
 //////////////////////////////////////////////////
 // Viscous drag force - applied at triangle centroid.
-void Hydrodynamics::ComputeViscousDragForce()
+std::pair<cgal::Vector3, cgal::Vector3>
+Hydrodynamics::ComputeViscousDragForce(
+    const SubmergedTriangleProperties& props,
+    double rho,
+    double cF)
 {
-  double rho = PhysicalConstants::WaterDensity();
-  double Rn = this->ComputeReynoldsNumber();
-  double cF = Physics::ViscousDragCoefficient(Rn);
-
-  cgal::Vector3 sumForce  = CGAL::NULL_VECTOR;
-  cgal::Vector3 sumTorque = CGAL::NULL_VECTOR;
-  for (auto&& subTriProps : this->data->submergedTriangleProperties)
-  {
-    // Force
-    double fDrag = 0.5 * rho * cF * subTriProps.area * subTriProps.v_rel_mag;
-    cgal::Vector3 force = subTriProps.vf * fDrag;
-    sumForce += force;
-
-    // Torque;
-    cgal::Vector3 torque = CGAL::cross_product(subTriProps.xr, force);
-    sumTorque += torque;
-  }
-
-  this->data->force  += sumForce;
-  this->data->torque += sumTorque;
+  const double fDrag         = 0.5 * rho * cF * props.area * props.v_rel_mag;
+  const cgal::Vector3 force  = props.vf * fDrag;
+  const cgal::Vector3 torque = CGAL::cross_product(props.xr, force);
+  return {force, torque};
 }
 
 //////////////////////////////////////////////////
 // Pressure drag force - applied at triangle centroid.
-void Hydrodynamics::ComputePressureDragForce()
+std::pair<cgal::Vector3, cgal::Vector3>
+Hydrodynamics::ComputePressureDragForce(
+    const SubmergedTriangleProperties& props,
+    double cPDrag1, double cPDrag2, double fPDrag,
+    double cSDrag1, double cSDrag2, double fSDrag,
+    double vRDrag)
 {
-  auto& params = *this->data->params;
-
-  // Positive pressure
-  double cPDrag1 = params.CPDrag1();
-  double cPDrag2 = params.CPDrag2();
-  double fPDrag  = params.FPDrag();
-  // Negative pressure (suction)
-  double cSDrag1 = params.CSDrag1();
-  double cSDrag2 = params.CSDrag2();
-  double fSDrag  = params.FSDrag();
-
-  // Reference speed
-  double vRDrag  = params.VRDrag();
-
-  cgal::Vector3 sumForce  = CGAL::NULL_VECTOR;
-  cgal::Vector3 sumTorque = CGAL::NULL_VECTOR;
-  for (auto&& subTriProps : this->data->submergedTriangleProperties)
-  {
-    // General
-    double S    = subTriProps.area;
-    double vp = subTriProps.v_rel_mag;   // fluid-relative speed
-    double cosTheta = subTriProps.cosTheta;
-
-    double v    = vp / vRDrag;
-    double drag = 0.0;
-    if (cosTheta >= 0.0)
-    {
-      drag = -(cPDrag1 * v + cPDrag2 * v * v) * S * std::pow(cosTheta, fPDrag);
-    } else {
-      drag =  (cSDrag1 * v + cSDrag2 * v * v) * S * std::pow(-cosTheta, fSDrag);
-    }
-    cgal::Vector3 force = subTriProps.normal * drag;
-    sumForce += force;
-
-    // Torque;
-    cgal::Vector3 torque = CGAL::cross_product(subTriProps.xr, force);
-    sumTorque += torque;
-  }
-
-  this->data->force  += sumForce;
-  this->data->torque += sumTorque;
-
-  // @DEBUG_INFO
-  // if (std::abs(sumForce.z()) > 1.0E+10)
-  // {
-  //   gzmsg << "Overflow in ComputePressureDragForce..."    << "\n";
-  //   gzmsg << "position:     " << this->data->position     << "\n";
-  //   gzmsg << "linVelocity:  " << this->data->linVelocity  << "\n";
-  //   gzmsg << "angVelocity:  " << this->data->angVelocity  << "\n";
-  //   gzmsg << "force:        " << sumForce                 << "\n";
-  //   gzmsg << "torque:       " << sumTorque                << "\n";
-  //   for (auto&& subTriProps : this->data->submergedTriangleProperties)
-  //   {
-  //     DebugPrint(subTriProps);
-  //   }
-  // }
+  const double S        = props.area;
+  const double v        = props.v_rel_mag / vRDrag;
+  const double cosTheta = CGAL::to_double(props.cosTheta);
+  const double drag = (cosTheta >= 0.0)
+      ? -(cPDrag1 * v + cPDrag2 * v * v) * S * std::pow(cosTheta,  fPDrag)
+      :  (cSDrag1 * v + cSDrag2 * v * v) * S * std::pow(-cosTheta, fSDrag);
+  const cgal::Vector3 force  = props.normal * drag;
+  const cgal::Vector3 torque = CGAL::cross_product(props.xr, force);
+  return {force, torque};
 }
 
-void Hydrodynamics::ComputeFoilLiftForce()
+std::pair<cgal::Vector3, cgal::Vector3>
+Hydrodynamics::ComputeFoilLiftForce(
+    const SubmergedTriangleProperties& props,
+    double rho,
+    double Cl_alpha, double alpha_stall, double Cl_max,
+    double AR, double bottomThresh)
 {
-    const double rho  = PhysicalConstants::WaterDensity();
-    const double cL1  = this->data->params->CLift1();
+  const double nz = CGAL::to_double(props.normal.z());
+  if (nz < bottomThresh || props.v_rel_mag < 1e-4)
+    return {CGAL::NULL_VECTOR, CGAL::NULL_VECTOR};
 
-    const double Cl_alpha  = cL1 * 2.0 * M_PI;   // lift curve slope
-    const double alpha_stall = this->data->params->AlphaStall();
-    const double Cl_max = this->data->params->CLMax();
+  const double alpha = props.alpha;
+  const double Cl = (std::fabs(alpha) < alpha_stall)
+      ? Cl_alpha * alpha
+      : Cl_max * (alpha > 0.0 ? 1.0 : -1.0);
+  const double Cdi = (Cl * Cl) / (M_PI * AR + 1e-9);
+  const double q_A = 0.5 * rho * props.v_rel_mag * props.v_rel_mag * props.area;
 
-    // ── USE DYNAMIC AR instead of fixed SDF parameter ──
-    double AR = this->data->dynamic_foil_ar;   // computed this step
-    AR = std::max(AR, 0.5);                    // physical lower bound
+  cgal::Vector3 lift_dir = props.normal
+      - props.up * CGAL::to_double(
+            CGAL::scalar_product(props.normal, props.up));
+  const double ld_mag = std::sqrt(
+      CGAL::to_double(lift_dir.squared_length()));
+  if (ld_mag < 1e-9)
+    return {CGAL::NULL_VECTOR, CGAL::NULL_VECTOR};
 
-    for (auto& props : this->data->submergedTriangleProperties)
-    {
-        // Only apply to bottom-facing triangles (the planing surface)
-        double nz = CGAL::to_double(props.normal.z());
-        if (nz < this->data->params->BOTTOM_THRESHOLD) continue;   // skip side and stern triangles
+  lift_dir = lift_dir / ld_mag;
+  const cgal::Vector3 F_foil =
+      lift_dir * (Cl * q_A) + (-props.up) * (Cdi * q_A);
+  return {F_foil, CGAL::cross_product(props.xr, F_foil)};
+}
 
-        double v_mag = props.v_rel_mag;
-        if (v_mag < 1e-4) continue;
+void Hydrodynamics::ComputeAllSubmergedForces(
+    const std::chrono::_V2::steady_clock::duration& simTime)
+{
+  const int n = static_cast<int>(this->data->submergedTriangleProperties.size());
+  if (n == 0) return;
 
-        double alpha  = props.alpha;
-        double Cl;
-        if (std::fabs(alpha) < alpha_stall)
-            Cl = Cl_alpha * alpha;                        // linear region
-        else
-            Cl = Cl_max * (alpha > 0.0 ? 1.0 : -1.0);   // capped at stall
+  // Resize only — every element is overwritten in the loop below, so no init needed.
+  this->data->fBuoyancy.resize(n);
+  this->data->cBuoyancy.resize(n);
 
-        // Dynamic AR means this Cdi is physically correct at each planing state
-        double Cdi    = (Cl * Cl) / (M_PI * AR + 1e-9);
+  auto& position         = this->data->position;
+  auto& v_body           = this->data->linVelocity;
+  auto& omega            = this->data->angVelocity;
+  auto& wavefieldSampler = *this->data->wavefieldSampler;
+  const double t         = std::chrono::duration<double>(simTime).count();
 
-        double q_A    = 0.5 * rho * v_mag * v_mag * props.area;
+  // Viscous drag
+  const double rho  = PhysicalConstants::WaterDensity();
+  const double Rn   = this->ComputeReynoldsNumber();
+  const double cF   = Physics::ViscousDragCoefficient(Rn);
+  const bool viscousOn  = this->data->params->ViscousDragOn();
 
-        // Lift direction: component of normal perpendicular to v_rel
-        cgal::Vector3 lift_dir = props.normal
-            - props.up * CGAL::to_double(
-                CGAL::scalar_product(props.normal, props.up));
-        double ld_mag = std::sqrt(
-            CGAL::to_double(lift_dir.squared_length()));
-        if (ld_mag < 1e-9) continue;
-        lift_dir = lift_dir / ld_mag;
+  // Pressure drag
+  const bool pressureOn = this->data->params->PressureDragOn();
+  const double cPDrag1  = this->data->params->CPDrag1();
+  const double cPDrag2  = this->data->params->CPDrag2();
+  const double fPDrag   = this->data->params->FPDrag();
+  const double cSDrag1  = this->data->params->CSDrag1();
+  const double cSDrag2  = this->data->params->CSDrag2();
+  const double fSDrag   = this->data->params->FSDrag();
+  const double vRDrag   = this->data->params->VRDrag();
 
-        cgal::Vector3 F_lift    = lift_dir * (Cl  * q_A);
-        cgal::Vector3 F_induced = -props.up * (Cdi * q_A);
-        cgal::Vector3 F_foil    = F_lift + F_induced;
+  // Foil lift
+  const bool foilOn        = this->data->params->FoilLiftOn();
+  const double Cl_alpha    = this->data->params->CLift1() * 2.0 * M_PI;
+  const double alpha_stall = this->data->params->AlphaStall();
+  const double Cl_max      = this->data->params->CLMax();
+  double AR = std::max(this->data->dynamic_foil_ar, 0.5);
+  const double bottomThresh = this->data->params->BOTTOM_THRESHOLD;
 
-        this->data->force  += F_foil;
-        this->data->torque += CGAL::cross_product(props.xr, F_foil);
+  double fx = 0.0, fy = 0.0, fz = 0.0;
+  double tx = 0.0, ty = 0.0, tz = 0.0;
 
-        // @DEBUG_INFO
-        // gzmsg << "alpha: " << alpha << "\n";
-        // gzmsg << "Cl: " << Cl << "\n";
-        // gzmsg << "Cdi: " << Cdi << "\n";
-        // gzmsg << "F_lift: " << F_lift << "\n";
-        // gzmsg << "F_induced: " << F_induced << "\n";
-        // gzmsg << "F_foil: " << F_foil << "\n";
-    }
+#pragma omp parallel for reduction(+:fx,fy,fz,tx,ty,tz) schedule(static)
+  for (int i = 0; i < n; ++i)
+  {
+    auto& props          = this->data->submergedTriangleProperties[i];
+    const auto& subTri   = this->data->submergedTriangles[i];
+
+    // ── Point velocities ─────────────────────────────────────────────────
+    ComputePointVelocities(props, position, v_body, omega,
+        wavefieldSampler, t, this->data->params->GetWaterCurrentGrid());
+
+    // ── Helper: accumulate a (force, torque) pair into the reduction scalars ──
+    auto acc = [&](const std::pair<cgal::Vector3, cgal::Vector3>& ft) {
+      fx += CGAL::to_double(ft.first.x());
+      fy += CGAL::to_double(ft.first.y());
+      fz += CGAL::to_double(ft.first.z());
+      tx += CGAL::to_double(ft.second.x());
+      ty += CGAL::to_double(ft.second.y());
+      tz += CGAL::to_double(ft.second.z());
+    };
+
+    // ── Buoyancy ──────────────────────────────────────────────────────────
+    acc(ComputeBuoyancyForce(
+        wavefieldSampler, subTri, position,
+        this->data->fBuoyancy[i], this->data->cBuoyancy[i]));
+
+    // ── Viscous drag ──────────────────────────────────────────────────────
+    if (viscousOn)
+      acc(ComputeViscousDragForce(props, rho, cF));
+
+    // ── Pressure drag ─────────────────────────────────────────────────────
+    if (pressureOn)
+      acc(ComputePressureDragForce(
+          props, cPDrag1, cPDrag2, fPDrag, cSDrag1, cSDrag2, fSDrag, vRDrag));
+
+    // ── Foil lift ─────────────────────────────────────────────────────────
+    if (foilOn)
+      acc(ComputeFoilLiftForce(
+          props, rho, Cl_alpha, alpha_stall, Cl_max, AR, bottomThresh));
+  }
+
+  this->data->force  += cgal::Vector3(fx, fy, fz);
+  this->data->torque += cgal::Vector3(tx, ty, tz);
 }
 
 }  // namespace waves
