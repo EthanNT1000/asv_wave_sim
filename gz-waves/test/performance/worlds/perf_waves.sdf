@@ -8,6 +8,13 @@
 <sdf version="1.6">
   <world name="perf_waves">
 
+    <!-- real_time_factor 0: run as fast as possible, no wall-clock throttle.
+         Patched at runtime by perf_check.py via the speedup argument. -->
+    <physics type="ode">
+      <real_time_factor>0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
     <plugin filename="gz-sim-physics-system"
             name="gz::sim::systems::Physics">
     </plugin>

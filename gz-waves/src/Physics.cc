@@ -910,7 +910,8 @@ void Hydrodynamics::UpdateSubmergedTriangles()
   // Compute depths — property map initialized once in constructor.
   // Vertex/face indices are 0..N-1 (mesh topology never changes, no deletions).
   const int nVerts = static_cast<int>(linkMesh.num_vertices());
-  #pragma omp parallel for schedule(static)
+  const int nTV = std::max(1, std::min(omp_get_max_threads(), nVerts / 32));
+  #pragma omp parallel for schedule(static) num_threads(nTV)
   for (int i = 0; i < nVerts; ++i)
   {
     const cgal::Mesh::Vertex_index vi(i);

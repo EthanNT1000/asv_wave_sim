@@ -18,16 +18,29 @@ Prerequisites:
     sudo apt-get install linux-tools-generic        # for perf
 
 Usage:
-    python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py
+    # Auto-tune OMP_NUM_THREADS for this machine, then benchmark:
+    python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py --tune
+
+    # Benchmark only (uses cached thread count from --tune, or min(cores, 8)):
+    python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py --duration 60
+
+    # Full benchmark with linux perf call-graph:
     python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py --perf --duration 60
-    python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py --speedup 3.0 --threads 8
+
+    # Shorter tune probes (10 s each instead of 20 s):
+    python3 src/asv_wave_sim/gz-waves/test/performance/perf_check.py --tune --probe-duration 10
+
+Thread count is written to <workspace>/.omp_threads and read automatically
+by all launchers on subsequent runs. Re-run --tune when changing machines.
 
 If perf_event_paranoid > 2, run once to unlock:
     echo 1 | sudo tee /proc/sys/kernel/perf_event_paranoid
 """
 
 import argparse
+import contextlib
 import ctypes
+import io
 import os
 import re
 import shutil
@@ -87,6 +100,23 @@ def _have_lib(name: str) -> bool:
         return True
     except OSError:
         return False
+
+
+def _default_omp_threads() -> int:
+    # Check workspace cache written by --tune first.
+    try:
+        install = _find_install_root()
+        if install:
+            cache = install.parent / '.omp_threads'
+            if cache.exists():
+                val = int(cache.read_text().strip())
+                if 1 <= val <= 1024:
+                    return val
+    except Exception:
+        pass
+    # ~200 triangle iterations per physics step: beyond 8 threads the
+    # fork-join + reduction-tree overhead exceeds the parallelism benefit.
+    return min(os.cpu_count() or 1, 8)
 
 
 def _perf_paranoid() -> int:
@@ -151,7 +181,8 @@ def _build_gz_env(gz_models: Path | None, threads: int,
                   plugin_dirs: list[str]) -> dict:
     env = dict(os.environ)
     env['GZ_PARTITION']    = 'gz_perf_check'
-    env['OMP_NUM_THREADS'] = str(threads)
+    env['OMP_NUM_THREADS']  = str(threads)
+    env['OMP_WAIT_POLICY']  = 'passive'
 
     resource_paths = []
     if gz_models:
@@ -411,10 +442,14 @@ class PerfChecker:
         print(f'    Status           : {c}{"OK" if self.load_ok else "TIMEOUT / FAILED"}{_N}')
         print(f'    Load time        : {self.load_time:.2f} s')
 
-        print(f'\n  Real-time Factor  (target {self._speedup}×)')
+        target_str = 'unlimited' if self._speedup == 0 else f'{self._speedup}×'
+        print(f'\n  Real-time Factor  (target {target_str})')
         if self.rtf_samples:
             avg = sum(self.rtf_samples) / len(self.rtf_samples)
-            pct = avg / self._speedup * 100.0 if self._speedup else 0.0
+            if self._speedup > 0:
+                pct = avg / self._speedup * 100.0
+            else:
+                pct = avg * 100.0   # treat 1.0x as 100 % when unlimited
             c   = _G if pct >= 90 else (_Y if pct >= 70 else _R)
             print(f'    Samples          : {len(self.rtf_samples)}')
             print(f'    Average RTF      : {c}{avg:.4f}{_N}  '
@@ -664,13 +699,104 @@ class PerfChecker:
                 issues = True
                 print(f'    {_Y}• Core imbalance {spread:.0f}% — try schedule(dynamic) on hydrodynamics loops.{_N}')
 
-        if self._threads < (os.cpu_count() or 1):
+        opt = _default_omp_threads()
+        if self._threads < opt:
             issues = True
-            print(f'    {_Y}• {self._threads} thread(s) vs {os.cpu_count()} cores available.{_N}')
-            print(f'      Re-run: --threads {os.cpu_count()}')
+            print(f'    {_Y}• {self._threads} thread(s) below recommended {opt} for this machine.{_N}')
+            print(f'      Re-run: --threads {opt}')
 
         if not issues:
             print(f'    {_G}• No issues detected.{_N}')
+
+    # ── Thread tuning ─────────────────────────────────────────────────────────
+
+    def _cache_path(self) -> 'Path | None':
+        install = _find_install_root()
+        return (install.parent / '.omp_threads') if install else None
+
+    def _probe_rtf(self, threads: int, duration: int) -> float:
+        """Spawn headless Gazebo with `threads`, sample for `duration` s, return mean RTF."""
+        self.rtf_samples.clear()
+        self._ready.clear()
+        self.load_ok = False
+
+        saved_threads, saved_duration, saved_speedup = (
+            self._threads, self._duration, self._speedup)
+        self._threads  = threads
+        self._duration = duration
+        self._speedup  = 0.0   # always unlimited during probes
+
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.start_sim()
+            if self.load_ok:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.sample()
+        except Exception:
+            pass
+        finally:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.stop_sim()
+            self._threads, self._duration, self._speedup = (
+                saved_threads, saved_duration, saved_speedup)
+
+        time.sleep(2.0)   # let OS release sockets before next probe
+        return (sum(self.rtf_samples) / len(self.rtf_samples)
+                if self.rtf_samples else 0.0)
+
+    def tune(self, probe_duration: int = 20) -> int:
+        """Probe powers-of-2 thread counts, cache the optimal, return it."""
+        cpu_count = os.cpu_count() or 1
+        candidates: list[int] = []
+        t = 1
+        while t <= cpu_count:
+            candidates.append(t)
+            t *= 2
+        if candidates[-1] != cpu_count:
+            candidates.append(cpu_count)
+
+        est = len(candidates) * (probe_duration + 6)
+        W   = 62
+        print(f'\n{"─" * W}')
+        print(f'  Thread Tuning  ({len(candidates)} probes × {probe_duration}s  ≈ {est}s)')
+        print(f'{"─" * W}')
+
+        results: list[tuple[int, float]] = []
+        best = (candidates[0], 0.0)
+
+        for threads in candidates:
+            print(f'  probing {threads:3d} thread(s) ...', end='\r', flush=True)
+            rtf = self._probe_rtf(threads, probe_duration)
+            results.append((threads, rtf))
+            marker = ''
+            if rtf >= best[1]:
+                best = (threads, rtf)
+                marker = f'  {_G}← best{_N}'
+            print(f'  threads={threads:3d}  RTF={rtf:.4f}x{marker}' + ' ' * 20)
+
+            # stop early if RTF has degraded for 2 consecutive steps past peak
+            if len(results) >= 3:
+                last = [r for _, r in results[-3:]]
+                if last[2] < last[1] < last[0]:
+                    print(f'  {_Y}RTF declining — stopping early{_N}')
+                    break
+
+        best_threads, best_rtf = best
+        print(f'\n  Optimal  OMP_NUM_THREADS = {_G}{best_threads}{_N}'
+              f'  (RTF {best_rtf:.4f}x)')
+
+        cache = self._cache_path()
+        if cache:
+            try:
+                cache.write_text(str(best_threads))
+                print(f'  Saved  → {cache}')
+            except Exception as e:
+                print(f'  {_Y}Could not save cache: {e}{_N}')
+        else:
+            print(f'  {_Y}Workspace root not found — cache not saved{_N}')
+
+        print(f'{"─" * W}')
+        return best_threads
 
     # ── gz-transport callback ─────────────────────────────────────────────────
 
@@ -689,12 +815,16 @@ def main() -> None:
     )
     parser.add_argument('--duration', type=int, default=30,
                         help='Sampling window in seconds (default: 30)')
-    parser.add_argument('--speedup', type=float, default=1.0,
-                        help='Gazebo real_time_factor target (default: 1.0)')
-    parser.add_argument('--threads', type=int, default=os.cpu_count() or 1,
-                        help='OMP_NUM_THREADS for Gazebo (default: all cores)')
+    parser.add_argument('--speedup', type=float, default=0.0,
+                        help='Gazebo real_time_factor target — 0 = unlimited (default: 0)')
+    parser.add_argument('--threads', type=int, default=_default_omp_threads(),
+                        help='OMP_NUM_THREADS for Gazebo (default: cache or min(cpu_count, 8))')
     parser.add_argument('--world', type=str, default=None,
                         help='Override world SDF path')
+    parser.add_argument('--tune', action='store_true', default=False,
+                        help='Auto-tune OMP_NUM_THREADS before the benchmark')
+    parser.add_argument('--probe-duration', type=int, default=20,
+                        help='Seconds per probe during --tune (default: 20)')
 
     perf_grp = parser.add_mutually_exclusive_group()
     perf_grp.add_argument('--perf', dest='perf', action='store_true',
@@ -718,6 +848,9 @@ def main() -> None:
 
     try:
         checker.check_environment()
+        if args.tune:
+            optimal = checker.tune(probe_duration=args.probe_duration)
+            checker._threads = optimal
         checker.start_sim()
         checker.sample()
     except KeyboardInterrupt:
