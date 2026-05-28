@@ -344,10 +344,12 @@ class HydrodynamicsParametersPrivate
  public:
   HydrodynamicsParametersPrivate() :
     dampingOn(true),
-    cDampL1(1.0E-6),
-    cDampL2(1.0E-6),
-    cDampR1(1.0E-6),
-    cDampR2(1.0E-6),
+    cDampU1(1.0e-6), cDampU2(1.0e-6),
+    cDampV1(1.0e-3), cDampV2(1.0e-3),
+    cDampW1(1.0e-3), cDampW2(1.0e-3),
+    cDampP1(5.0e-3), cDampP2(5.0e-3),
+    cDampQ1(5.0e-3), cDampQ2(5.0e-3),
+    cDampN1(5.0e-4), cDampN2(5.0e-4),
     viscousDragOn(true),
     pressureDragOn(true),
     cPDrag1(1.0E+2),
@@ -367,13 +369,13 @@ class HydrodynamicsParametersPrivate
   // Linear and rotational damping
   bool dampingOn;
 
-  // Linear drag coefficients
-  double cDampL1;
-  double cDampL2;
-
-  // Rotation drag coefficients
-  double cDampR1;
-  double cDampR2;
+  // Per-DOF Fossen damping: surge(U) sway(V) heave(W) roll(P) pitch(Q) yaw(N)
+  double cDampU1, cDampU2;  // surge
+  double cDampV1, cDampV2;  // sway   (high: wide hull)
+  double cDampW1, cDampW2;  // heave
+  double cDampP1, cDampP2;  // roll   (Seakeeper approximation range)
+  double cDampQ1, cDampQ2;  // pitch
+  double cDampN1, cDampN2;  // yaw
 
   /// Viscous drag
   bool viscousDragOn;
@@ -444,28 +446,18 @@ bool HydrodynamicsParameters::PressureDragOn() const
 }
 
 //////////////////////////////////////////////////
-double HydrodynamicsParameters::CDampL1() const
-{
-  return this->data->cDampL1;
-}
-
-//////////////////////////////////////////////////
-double HydrodynamicsParameters::CDampL2() const
-{
-  return this->data->cDampL2;
-}
-
-//////////////////////////////////////////////////
-double HydrodynamicsParameters::CDampR1() const
-{
-  return this->data->cDampR1;
-}
-
-//////////////////////////////////////////////////
-double HydrodynamicsParameters::CDampR2() const
-{
-  return this->data->cDampR2;
-}
+double HydrodynamicsParameters::CDampU1() const { return this->data->cDampU1; }
+double HydrodynamicsParameters::CDampU2() const { return this->data->cDampU2; }
+double HydrodynamicsParameters::CDampV1() const { return this->data->cDampV1; }
+double HydrodynamicsParameters::CDampV2() const { return this->data->cDampV2; }
+double HydrodynamicsParameters::CDampW1() const { return this->data->cDampW1; }
+double HydrodynamicsParameters::CDampW2() const { return this->data->cDampW2; }
+double HydrodynamicsParameters::CDampP1() const { return this->data->cDampP1; }
+double HydrodynamicsParameters::CDampP2() const { return this->data->cDampP2; }
+double HydrodynamicsParameters::CDampQ1() const { return this->data->cDampQ1; }
+double HydrodynamicsParameters::CDampQ2() const { return this->data->cDampQ2; }
+double HydrodynamicsParameters::CDampN1() const { return this->data->cDampN1; }
+double HydrodynamicsParameters::CDampN2() const { return this->data->cDampN2; }
 
 //////////////////////////////////////////////////
 double HydrodynamicsParameters::CPDrag1() const
@@ -550,14 +542,18 @@ void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
   this->data->pressureDragOn = Utilities::MsgParamBool(
       _msg,  "pressure_drag_on", this->data->pressureDragOn);
 
-  this->data->cDampL1 = Utilities::MsgParamDouble(
-      _msg, "cDampL1",  this->data->cDampL1);
-  this->data->cDampL2 = Utilities::MsgParamDouble(
-      _msg, "cDampL2",  this->data->cDampL2);
-  this->data->cDampR1 = Utilities::MsgParamDouble(
-      _msg, "cDampR1",  this->data->cDampR1);
-  this->data->cDampR2 = Utilities::MsgParamDouble(
-      _msg, "cDampR2",  this->data->cDampR2);
+  this->data->cDampU1 = Utilities::MsgParamDouble(_msg, "cDampU1", this->data->cDampU1);
+  this->data->cDampU2 = Utilities::MsgParamDouble(_msg, "cDampU2", this->data->cDampU2);
+  this->data->cDampV1 = Utilities::MsgParamDouble(_msg, "cDampV1", this->data->cDampV1);
+  this->data->cDampV2 = Utilities::MsgParamDouble(_msg, "cDampV2", this->data->cDampV2);
+  this->data->cDampW1 = Utilities::MsgParamDouble(_msg, "cDampW1", this->data->cDampW1);
+  this->data->cDampW2 = Utilities::MsgParamDouble(_msg, "cDampW2", this->data->cDampW2);
+  this->data->cDampP1 = Utilities::MsgParamDouble(_msg, "cDampP1", this->data->cDampP1);
+  this->data->cDampP2 = Utilities::MsgParamDouble(_msg, "cDampP2", this->data->cDampP2);
+  this->data->cDampQ1 = Utilities::MsgParamDouble(_msg, "cDampQ1", this->data->cDampQ1);
+  this->data->cDampQ2 = Utilities::MsgParamDouble(_msg, "cDampQ2", this->data->cDampQ2);
+  this->data->cDampN1 = Utilities::MsgParamDouble(_msg, "cDampN1", this->data->cDampN1);
+  this->data->cDampN2 = Utilities::MsgParamDouble(_msg, "cDampN2", this->data->cDampN2);
   this->data->cPDrag1 = Utilities::MsgParamDouble(
       _msg, "cPDrag1",  this->data->cPDrag1);
   this->data->cPDrag2 = Utilities::MsgParamDouble(
@@ -614,14 +610,18 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
     return;
   }
 
-  this->data->cDampL1 = Utilities::SdfParamDouble(
-    _sdf, "cDampL1", this->data->cDampL1);
-  this->data->cDampL2 = Utilities::SdfParamDouble(
-    _sdf, "cDampL2", this->data->cDampL2);
-  this->data->cDampR1 = Utilities::SdfParamDouble(
-    _sdf, "cDampR1", this->data->cDampR1);
-  this->data->cDampR2 = Utilities::SdfParamDouble(
-    _sdf, "cDampR2", this->data->cDampR2);
+  this->data->cDampU1 = Utilities::SdfParamDouble(_sdf, "cDampU1", this->data->cDampU1);
+  this->data->cDampU2 = Utilities::SdfParamDouble(_sdf, "cDampU2", this->data->cDampU2);
+  this->data->cDampV1 = Utilities::SdfParamDouble(_sdf, "cDampV1", this->data->cDampV1);
+  this->data->cDampV2 = Utilities::SdfParamDouble(_sdf, "cDampV2", this->data->cDampV2);
+  this->data->cDampW1 = Utilities::SdfParamDouble(_sdf, "cDampW1", this->data->cDampW1);
+  this->data->cDampW2 = Utilities::SdfParamDouble(_sdf, "cDampW2", this->data->cDampW2);
+  this->data->cDampP1 = Utilities::SdfParamDouble(_sdf, "cDampP1", this->data->cDampP1);
+  this->data->cDampP2 = Utilities::SdfParamDouble(_sdf, "cDampP2", this->data->cDampP2);
+  this->data->cDampQ1 = Utilities::SdfParamDouble(_sdf, "cDampQ1", this->data->cDampQ1);
+  this->data->cDampQ2 = Utilities::SdfParamDouble(_sdf, "cDampQ2", this->data->cDampQ2);
+  this->data->cDampN1 = Utilities::SdfParamDouble(_sdf, "cDampN1", this->data->cDampN1);
+  this->data->cDampN2 = Utilities::SdfParamDouble(_sdf, "cDampN2", this->data->cDampN2);
   this->data->cPDrag1 = Utilities::SdfParamDouble(
     _sdf, "cPDrag1", this->data->cPDrag1);
   this->data->cPDrag2 = Utilities::SdfParamDouble(
@@ -643,13 +643,24 @@ void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
   std::mt19937 engine(seed); // Using the Mersenne Twister 32-bit engine
 
-  std::uniform_real_distribution<double> dampinDist(
-    Utilities::SdfParamDouble(_sdf, "dampingDistMin", this->data->defaultDampingDistMin),
-    Utilities::SdfParamDouble(_sdf, "dampingDistMax", this->data->defaultDampingDistMax));
-  this->data->cDampL1 = dampinDist(engine);
-  this->data->cDampL2 = dampinDist(engine);
-  this->data->cDampR1 = dampinDist(engine);
-  this->data->cDampR2 = dampinDist(engine);
+  auto dampDist = [&](const char* minKey, const char* maxKey,
+                      double defMin, double defMax) {
+    return std::uniform_real_distribution<double>(
+      Utilities::SdfParamDouble(_sdf, minKey, defMin),
+      Utilities::SdfParamDouble(_sdf, maxKey, defMax));
+  };
+  auto dU = dampDist("dampUMin", "dampUMax", 1.0e-7, 1.0e-5);
+  auto dV = dampDist("dampVMin", "dampVMax", 1.0e-4, 1.0e-2);
+  auto dW = dampDist("dampWMin", "dampWMax", 1.0e-4, 1.0e-2);
+  auto dP = dampDist("dampPMin", "dampPMax", 1.0e-3, 5.0e-2);
+  auto dQ = dampDist("dampQMin", "dampQMax", 1.0e-3, 5.0e-2);
+  auto dN = dampDist("dampNMin", "dampNMax", 1.0e-4, 1.0e-3);
+  this->data->cDampU1 = dU(engine); this->data->cDampU2 = dU(engine);
+  this->data->cDampV1 = dV(engine); this->data->cDampV2 = dV(engine);
+  this->data->cDampW1 = dW(engine); this->data->cDampW2 = dW(engine);
+  this->data->cDampP1 = dP(engine); this->data->cDampP2 = dP(engine);
+  this->data->cDampQ1 = dQ(engine); this->data->cDampQ2 = dQ(engine);
+  this->data->cDampN1 = dN(engine); this->data->cDampN2 = dN(engine);
 
   std::uniform_real_distribution<double> cPDragDist(
     Utilities::SdfParamDouble(_sdf, "cPDragDistMin", this->data->defaultCPDragDistMin),
@@ -685,10 +696,12 @@ void HydrodynamicsParameters::DebugPrint() const
   gzmsg << "damping_on:       " << this->data->dampingOn << "\n";
   gzmsg << "viscous_drag_on:  " << this->data->viscousDragOn << "\n";
   gzmsg << "pressure_drag_on: " << this->data->pressureDragOn << "\n";
-  gzmsg << "cDampL1:          " << this->data->cDampL1 << "\n";
-  gzmsg << "cDampL2:          " << this->data->cDampL2 << "\n";
-  gzmsg << "cDampR1:          " << this->data->cDampR1 << "\n";
-  gzmsg << "cDampR2:          " << this->data->cDampR2 << "\n";
+  gzmsg << "cDampU1/U2:       " << this->data->cDampU1 << " / " << this->data->cDampU2 << "\n";
+  gzmsg << "cDampV1/V2:       " << this->data->cDampV1 << " / " << this->data->cDampV2 << "\n";
+  gzmsg << "cDampW1/W2:       " << this->data->cDampW1 << " / " << this->data->cDampW2 << "\n";
+  gzmsg << "cDampP1/P2:       " << this->data->cDampP1 << " / " << this->data->cDampP2 << "\n";
+  gzmsg << "cDampQ1/Q2:       " << this->data->cDampQ1 << " / " << this->data->cDampQ2 << "\n";
+  gzmsg << "cDampN1/N2:       " << this->data->cDampN1 << " / " << this->data->cDampN2 << "\n";
   gzmsg << "cPDrag1:          " << this->data->cPDrag1 << "\n";
   gzmsg << "cPDrag2:          " << this->data->cPDrag2 << "\n";
   gzmsg << "fPDrag:           " << this->data->fPDrag << "\n";
@@ -1366,43 +1379,36 @@ void Hydrodynamics::ComputeDampingForce()
 {
   auto& params = *this->data->params;
 
-    // Linear drag coefficients
-  double cDampL1 = params.CDampL1();
-  double cDampR1 = params.CDampR1();
+  // Transform velocities to body frame for per-DOF Fossen damping matrix.
+  // The gz::math quaternion is the world-to-body rotation stored in pose.Rot().
+  gz::math::Quaterniond R     = this->data->pose.Rot();
+  gz::math::Quaterniond R_inv = R.Inverse();
 
-  // Quadratic drag coefficients
-  double cDampL2 = params.CDampL2();
-  double cDampR2 = params.CDampR2();
+  gz::math::Vector3d linW = ToGz(this->data->linVelocity
+                                  - this->data->waterCurrentCoM);
+  gz::math::Vector3d angW = ToGz(this->data->angVelocity);
 
-  double area = this->data->area;
-  double subArea = this->data->submergedArea;
-  double rs = subArea / area;
+  gz::math::Vector3d linB = R_inv.RotateVector(linW);
+  gz::math::Vector3d angB = R_inv.RotateVector(angW);
 
-  // Force
-  cgal::Vector3 v = this->data->linVelocity - this->data->waterCurrentCoM;
-  double linSpeed = std::sqrt(v.squared_length());
-  double cL = - rs * (cDampL1 + cDampL2 * linSpeed);
-  cgal::Vector3 force = v * cL;
+  // F = -(D1·v + D2·|v|·v) applied independently per DOF.
+  auto damp = [](double c1, double c2, double v) -> double {
+    return -(c1 * v + c2 * std::fabs(v) * v);
+  };
 
-  auto& omega = this->data->angVelocity;
-  double angSpeed = std::sqrt(omega.squared_length());
-  double cR = - rs * (cDampR1 + cDampR2 * angSpeed);
-  cgal::Vector3 torque = omega * cR;
+  gz::math::Vector3d forceB(
+    damp(params.CDampU1(), params.CDampU2(), linB.X()),  // surge
+    damp(params.CDampV1(), params.CDampV2(), linB.Y()),  // sway
+    damp(params.CDampW1(), params.CDampW2(), linB.Z())   // heave
+  );
+  gz::math::Vector3d torqueB(
+    damp(params.CDampP1(), params.CDampP2(), angB.X()),  // roll
+    damp(params.CDampQ1(), params.CDampQ2(), angB.Y()),  // pitch
+    damp(params.CDampN1(), params.CDampN2(), angB.Z())   // yaw
+  );
 
-  this->data->force  += force;
-  this->data->torque += torque;
-
-  // @DEBUG_INF0
-  // gzmsg << "area:       " << area << "\n";
-  // gzmsg << "subArea:    " << subArea << "\n";
-  // gzmsg << "v:          " << v << "\n";
-  // gzmsg << "omega:      " << omega << "\n";
-  // gzmsg << "linSpeed:   " << linSpeed << "\n";
-  // gzmsg << "angSpeed:   " << angSpeed << "\n";
-  // gzmsg << "cR:         " << cR << "\n";
-  // gzmsg << "cL:         " << cL << "\n";
-  // gzmsg << "force:      " << force << "\n";
-  // gzmsg << "torque:     " << torque << "\n";
+  this->data->force  += ToVector3(R.RotateVector(forceB));
+  this->data->torque += ToVector3(R.RotateVector(torqueB));
 }
 
 //////////////////////////////////////////////////

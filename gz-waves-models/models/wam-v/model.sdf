@@ -336,11 +336,13 @@
           <viscous_drag_on>1</viscous_drag_on>
           <pressure_drag_on>1</pressure_drag_on>
         
-          <!-- Linear and Angular Damping -->
-          <cDampL1>1.0E-6</cDampL1>
-          <cDampL2>1.0E-6</cDampL2>
-          <cDampR1>1.0E-6</cDampR1>
-          <cDampR2>1.0E-6</cDampR2>
+          <!-- Per-DOF Fossen damping (surge/sway/heave/roll/pitch/yaw) -->
+          <cDampU1>1.0E-6</cDampU1>  <cDampU2>1.0E-6</cDampU2>
+          <cDampV1>1.0E-3</cDampV1>  <cDampV2>1.0E-3</cDampV2>
+          <cDampW1>1.0E-3</cDampW1>  <cDampW2>1.0E-3</cDampW2>
+          <cDampP1>5.0E-3</cDampP1>  <cDampP2>5.0E-3</cDampP2>
+          <cDampQ1>5.0E-3</cDampQ1>  <cDampQ2>5.0E-3</cDampQ2>
+          <cDampN1>5.0E-4</cDampN1>  <cDampN2>5.0E-4</cDampN2>
         
           <!-- 'Pressure' Drag -->
           <cPDrag1>1.0E+2</cPDrag1>

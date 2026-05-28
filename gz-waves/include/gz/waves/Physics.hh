@@ -222,17 +222,21 @@ class HydrodynamicsParameters
   /// \brief True if pressure drag is enabled.
   bool PressureDragOn() const;
 
-  /// \brief The linear damping coefficient for linear montion.
-  double CDampL1() const;
-
-  /// \brief The quadratic damping coefficient for linear montion.
-  double CDampL2() const;
-
-  /// \brief The linear damping coefficient for angular montion.
-  double CDampR1() const;
-
-  /// \brief The quadratic damping coefficient for angular montion.
-  double CDampR2() const;
+  /// \brief Per-DOF Fossen damping coefficients (linear + quadratic each).
+  /// Naming: C<DOF><order> where DOF = U(surge) V(sway) W(heave)
+  ///         P(roll) Q(pitch) N(yaw), order = 1(linear) 2(quadratic).
+  double CDampU1() const;  ///< surge  linear
+  double CDampU2() const;  ///< surge  quadratic
+  double CDampV1() const;  ///< sway   linear
+  double CDampV2() const;  ///< sway   quadratic
+  double CDampW1() const;  ///< heave  linear
+  double CDampW2() const;  ///< heave  quadratic
+  double CDampP1() const;  ///< roll   linear
+  double CDampP2() const;  ///< roll   quadratic
+  double CDampQ1() const;  ///< pitch  linear
+  double CDampQ2() const;  ///< pitch  quadratic
+  double CDampN1() const;  ///< yaw    linear
+  double CDampN2() const;  ///< yaw    quadratic
 
   /// \brief The linear coefficient for positive pressure drag.
   double CPDrag1() const;
