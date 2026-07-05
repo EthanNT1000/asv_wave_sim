@@ -22,6 +22,8 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 
 - [OpenMP](https://www.openmp.org/) is used to parallelise wave mesh updates, hydrodynamics force calculations, and FFT execution across multiple CPU cores.
 
+- This fork packages `gz-waves` and `gz-waves-models` as ROS 2 `ament_cmake` packages (see [ROS 2 / ament build](#ros-2--ament-build) below), and extends the hydrodynamics system with a Fossen-style per-DOF damping model, planing-hull foil lift, aerodynamic drag on above-waterline faces, a bulk water-current field, and telemetry/sensor plugins (InfluxDB export, speed-through-water topic, anemometer). See the [Changes](#changes) section and the physics write-ups in [`doc/`](doc/) for details.
+
 ## Ubuntu
 
 - Ubuntu 22.04 (Jammy)
@@ -161,9 +163,22 @@ mkdir build && cd build
 cmake .. && make
 ```
 
+### ROS 2 / ament build
+
+`gz-waves` and `gz-waves-models` are `ament_cmake` packages (see their `package.xml` files) and build as part of a normal ROS 2 / colcon workspace, with no other ROS 2 dependencies required.
+
+Each package registers `ament_environment_hooks` (`gz-waves/hooks/gz-waves1.{dsv,sh}.in` and `gz-waves-models/hooks/gz_waves_models.{dsv,sh}.in`) so that sourcing the workspace's `install/setup.bash` automatically prepends:
+
+- `GZ_SIM_SYSTEM_PLUGIN_PATH` and `GZ_GUI_PLUGIN_PATH` with the installed `gz-waves1` plugin and gui directories.
+- `GZ_SIM_RESOURCE_PATH` with the installed `gz_waves_models` `models/` and `worlds/` directories.
+
+This means the manual `export` commands in [Set environment variables](#set-environment-variables) below are only needed if you are not sourcing the workspace via colcon (e.g. building `gz-waves` standalone with plain CMake).
+
 ## Usage
 
 ### Set environment variables
+
+If your workspace was built and sourced with `colcon` (see [ROS 2 / ament build](#ros-2--ament-build)), `GZ_SIM_RESOURCE_PATH`, `GZ_SIM_SYSTEM_PLUGIN_PATH` and `GZ_GUI_PLUGIN_PATH` are already set by the package's environment hooks and the exports below are not required.
 
 ```bash
 # for future use - to support multiple Gazebo versions
@@ -413,6 +428,15 @@ The waves visual plugin has the same algorithm elements as the model plugin and 
 in a model using the `<enable>` element. The parameter should be a fully
 scoped model entity (model, link or collision name).
 - The `<wave_model>` element is not used.
+- The single scalar linear/angular damping coefficients (`cDampL1/L2/R1/R2`) have been
+replaced by a full per-DOF [Fossen](doc/Hydrodynamics%20Physics%20Algorithm.md)-style
+damping matrix (`cDampU*`/`V*`/`W*`/`P*`/`Q*`/`N*` for surge/sway/heave/roll/pitch/yaw).
+A `<randomize>` block can be added instead to draw each coefficient from a uniform
+distribution, useful for domain randomization across training episodes.
+- Foil lift (planing-hull dynamic lift) and above-waterline aerodynamic drag can be
+enabled per-model. The plugin can also load a bulk water-current field, publish the
+model's speed through water, and stream per-triangle telemetry to InfluxDB — see
+[Telemetry, sensors and water current](#telemetry-sensors-and-water-current) below.
 
 ```xml
 <plugin
@@ -430,17 +454,49 @@ scoped model entity (model, link or collision name).
   <enable>model_name::link1::collision1</enable>
   <enable>model_name::link1::collision2</enable>
 
+  <!-- Above-waterline aerodynamic drag (flat-plate approximation) -->
+  <aerodynamic_drag_on>1</aerodynamic_drag_on>
+  <cAeroDrag>1.0</cAeroDrag>
+
+  <!-- Publish speed through water (defaults to /model/<model>/speed_through_water) -->
+  <SpeedThroughWater>
+    <topic>/model/model_name/speed_through_water</topic>
+    <link_name>base_link</link_name>
+  </SpeedThroughWater>
+
+  <!-- Stream per-triangle hydrodynamics telemetry to InfluxDB over UDP (line protocol) -->
+  <influxDBUdp>
+    <ip>127.0.0.1</ip>
+    <port>8094</port>
+    <measurement>asv_wave_sim_triangle</measurement>
+    <update_rate>1000.0</update_rate>
+  </influxDBUdp>
+
   <!-- Hydrodynamics -->
   <hydrodynamics>
     <damping_on>1</damping_on>
     <viscous_drag_on>1</viscous_drag_on>
     <pressure_drag_on>1</pressure_drag_on>
 
-    <!-- Linear and Angular Damping -->  
-    <cDampL1>1.0E-6</cDampL1>
-    <cDampL2>1.0E-6</cDampL2>
-    <cDampR1>1.0E-6</cDampR1>
-    <cDampR2>1.0E-6</cDampR2>
+    <!-- Per-DOF Fossen damping: C<DOF><order>, DOF = U/V/W/P/Q/N
+         (surge/sway/heave/roll/pitch/yaw), order = 1 linear, 2 quadratic -->
+    <cDampU1>1.0E-6</cDampU1>
+    <cDampU2>1.0E-6</cDampU2>
+    <cDampV1>1.0E-4</cDampV1>
+    <cDampV2>1.0E-4</cDampV2>
+    <cDampW1>1.0E-4</cDampW1>
+    <cDampW2>1.0E-4</cDampW2>
+    <cDampP1>1.0E-3</cDampP1>
+    <cDampP2>1.0E-3</cDampP2>
+    <cDampQ1>1.0E-3</cDampQ1>
+    <cDampQ2>1.0E-3</cDampQ2>
+    <cDampN1>1.0E-4</cDampN1>
+    <cDampN2>1.0E-4</cDampN2>
+
+    <!-- Or, instead of fixed cDamp* values, randomize each coefficient
+         (uniformly) once per load, e.g. for domain randomization -->
+    <!-- <randomize>1</randomize>
+    <dampUMin>1.0e-7</dampUMin><dampUMax>1.0e-5</dampUMax> -->
 
     <!-- 'Pressure' Drag -->
     <cPDrag1>1.0E+2</cPDrag1>
@@ -450,6 +506,15 @@ scoped model entity (model, link or collision name).
     <cSDrag2>1.0E+2</cSDrag2>
     <fSDrag>0.4</fSDrag>
     <vRDrag>1.0</vRDrag>
+
+    <!-- Planing-hull foil lift -->
+    <foil_lift_on>1</foil_lift_on>
+    <cLift1>1.0</cLift1>
+    <alphaStall>0.2618</alphaStall>
+
+    <!-- Optional bulk water-current field, preprocessed from HEC-RAS output
+         with preprocess_hecras.py into the binary WCRG v1 grid format -->
+    <water_current_grid>/path/to/current_grid.bin</water_current_grid>
   </hydrodynamics>
 
   <!-- Control visibility of markers -->
@@ -461,6 +526,16 @@ scoped model entity (model, link or collision name).
   </markers>
 </plugin>
 ```
+
+### Telemetry, sensors and water current
+
+- **Water current** — `WaterCurrentGrid` (`gz-waves/include/gz/waves/WaterCurrentGrid.hh`) loads a pre-processed binary grid (format `WCRG v1`, produced from HEC-RAS output by `preprocess_hecras.py`) and bilinearly samples a bulk current velocity at each submerged triangle's centroid, added to the wave orbital velocity to give the total fluid velocity used by drag, damping and foil lift.
+- **Speed through water** — the hydrodynamics plugin publishes the hull velocity relative to the fluid (wave orbital + current) as a `gz.msgs.Vector3d` on the topic set by `<SpeedThroughWater><topic>`, defaulting to `/model/<model_name>/speed_through_water`.
+- **InfluxDB telemetry** — when `<influxDBUdp>` is configured, per-triangle and per-submerged-triangle properties (position, velocities, forces) are sent as InfluxDB line protocol over UDP at `<update_rate>` Hz, batched up to the maximum UDP packet size for efficiency.
+- **Anemometer** — `gz::sim::systems::Anemometer` (`gz-waves/src/systems/anemometer/`), ported from [`srmainwaring/asv_sim`](https://github.com/srmainwaring/asv_sim), is a custom Gazebo sensor that publishes apparent wind speed and direction, configured under a sensor's `<gz:anemometer>` element (supports `<noise>`).
+- **Aerodynamic drag** — a flat-plate drag model (`<aerodynamic_drag_on>`, `<cAeroDrag>`) applies wind force/torque to above-waterline triangles, complementing the anemometer and wave/current fields.
+
+For the full derivation of the damping, drag and lift models see [`doc/Hydrodynamics Physics Algorithm.md`](doc/Hydrodynamics%20Physics%20Algorithm.md) and [`doc/Hydrodynamics physics functions.md`](doc/Hydrodynamics%20physics%20functions.md).
 
 ## Tests
 
