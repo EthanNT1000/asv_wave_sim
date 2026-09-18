@@ -27,13 +27,13 @@
 #ifndef GZ_WAVES_GEOM_TYPES_HH_
 #define GZ_WAVES_GEOM_TYPES_HH_
 
+#include <Eigen/Core>
+
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <vector>
-
-#include <Eigen/Core>
 
 namespace gz
 {
