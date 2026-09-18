@@ -94,8 +94,14 @@ def coriolis_from_mass_matrix(M, nu):
 
 
 def munk_moment(M_A, nu_r):
-    """Pitch/yaw moment of C_A(nu_r) nu_r (the Munk moment, Fossen Sec. 6.3)."""
-    return (coriolis_from_mass_matrix(M_A, nu_r) @ nu_r)[3:]
+    """Hydrodynamic moment -[C_A(nu_r) nu_r]_{4:6} acting on the vessel.
+
+    C_A(nu_r) nu_r sits on the left-hand side of Fossen's equation of motion,
+    so the moment exerted by the fluid is its negative.  For a diagonal M_A the
+    yaw component is (Y_vdot - X_udot) u_r v_r = -(A22 - A11) u_r v_r, the
+    destabilising Munk moment (Fossen Sec. 6.3).
+    """
+    return -(coriolis_from_mass_matrix(M_A, nu_r) @ nu_r)[3:]
 
 
 # ---------------------------------------------------------------------------
@@ -427,3 +433,82 @@ def rotation_matrix(roll=0.0, pitch=0.0, yaw=0.0):
         [cy * cp, -sy * cr + cy * sp * sr, sy * sr + cy * cr * sp],
         [sy * cp, cy * cr + sr * sp * sy, -cy * sr + sp * sy * cr],
         [-sp, cp * sr, cp * cr]])
+
+
+# ---------------------------------------------------------------------------
+# Vectorised still-water evaluation (used by scripts/decay_test.py)
+# ---------------------------------------------------------------------------
+def clip_below_plane(tris):
+    """Vectorised port of the waterline split for a flat surface z = 0.
+
+    Returns an (N, 3, 3) array of submerged sub-triangles, same orientation as
+    the parents (each parent yields 0, 1 or 2 sub-triangles).
+    """
+    T = np.asarray(tris, dtype=float).reshape(-1, 3, 3)
+    if len(T) == 0:
+        return np.zeros((0, 3, 3))
+    z = T[:, :, 2]
+    order = np.argsort(-z, axis=1)                       # H, M, L
+    S = np.take_along_axis(T, order[:, :, None], axis=1)
+    vh, vm, vl = S[:, 0], S[:, 1], S[:, 2]
+    hh, hm, hl = vh[:, 2], vm[:, 2], vl[:, 2]
+
+    out = []
+    parents = []
+    full = hh <= 0
+    out.append(S[full])
+    parents.append(np.where(full)[0])
+    one = (hh > 0) & (hm > 0) & (hl <= 0)                # one vertex under
+    if one.any():
+        tm = (-hl[one] / (hm[one] - hl[one]))[:, None]
+        th = (-hl[one] / (hh[one] - hl[one]))[:, None]
+        vmi = vl[one] + (vm[one] - vl[one]) * tm
+        vhi = vl[one] + (vh[one] - vl[one]) * th
+        out.append(np.stack([vl[one], vmi, vhi], axis=1))
+        parents.append(np.where(one)[0])
+    two = (hh > 0) & (hm <= 0)                            # two vertices under
+    if two.any():
+        tm = (-hm[two] / (hh[two] - hm[two]))[:, None]
+        tl = (-hl[two] / (hh[two] - hl[two]))[:, None]
+        vmi = vm[two] + (vh[two] - vm[two]) * tm
+        vli = vl[two] + (vh[two] - vl[two]) * tl
+        out.append(np.stack([vm[two], vmi, vl[two]], axis=1))
+        out.append(np.stack([vmi, vli, vl[two]], axis=1))
+        parents.append(np.where(two)[0])
+        parents.append(np.where(two)[0])
+    sub = np.concatenate(out, axis=0)
+    parents = np.concatenate(parents)
+    # restore parent orientation
+    n_par = np.cross(T[parents, 1] - T[parents, 0], T[parents, 2] - T[parents, 0])
+    n_sub = np.cross(sub[:, 1] - sub[:, 0], sub[:, 2] - sub[:, 0])
+    flip = np.einsum("ij,ij->i", n_par, n_sub) < 0
+    sub[flip] = sub[flip][:, [0, 2, 1]]
+    return sub
+
+
+def hydrostatic_wrench_fast(tris, com, rho=RHO_WATER, g=GRAVITY):
+    """Exact hydrostatic force/moment for a flat free surface at z = 0.
+
+    For a linear pressure p = -rho g z over a planar triangle the resultant is
+    F = n * rho * g * A * z_c (sign as in Physics.cc, g < 0) and the moment of
+    the distributed load is exact with the second-order triangle rule
+    int z r dA = (A/12) sum_i sum_j (1 + delta_ij) z_i r_j.  This equals the
+    centre-of-pressure construction in Physics.cc (verified in the tests).
+    """
+    sub = clip_below_plane(tris)
+    if len(sub) == 0:
+        return np.zeros(3), np.zeros(3), sub
+    e1 = sub[:, 1] - sub[:, 0]
+    e2 = sub[:, 2] - sub[:, 0]
+    nA2 = np.cross(e1, e2)                                # |nA2| = 2 A
+    A = 0.5 * np.linalg.norm(nA2, axis=1)
+    n = nA2 / np.maximum(2 * A, 1e-300)[:, None]
+    z = sub[:, :, 2]
+    zc = z.mean(axis=1)
+    F_i = n * (rho * g * A * (-zc))[:, None]              # depth h = -z_c > 0
+    # first moment of the pressure over each triangle: int (-z) r dA
+    w = (1.0 + np.eye(3))                                 # (1 + delta_ij)
+    zr = np.einsum("ni,ij,njk->nk", -z, w, sub) * (A / 12.0)[:, None]
+    # moment about com: int (r - com) x (rho g (-z) n) dA
+    tau_i = np.cross(zr - com * ((A * (-zc))[:, None]), n) * (rho * g)
+    return F_i.sum(axis=0), tau_i.sum(axis=0), sub
