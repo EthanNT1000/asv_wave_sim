@@ -49,7 +49,7 @@
 #include <utility>
 #include <vector>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
 #include <gz/math/Pose3.hh>
 #include <gz/msgs.hh>
@@ -82,10 +82,10 @@ class Physics
   /// \param[in] _B     The point of application of force B.
   /// \return           The point at which the resultant force is applied
   ///                   with no moment.
-  static cgal::Point3 CenterOfForce(
+  static geom::Point3 CenterOfForce(
     double _fA, double _fB,
-    const cgal::Point3& _A,
-    const cgal::Point3& _B);
+    const geom::Point3& _A,
+    const geom::Point3& _B);
 
   /// \brief Compute the deep water dispersion.
   ///
@@ -118,11 +118,11 @@ class Physics
   /// \param[in] _M   A base vertex with M.z < H.z.
   /// \param[in] _B   The midpoint of the base B.z = M.z.
   /// \return         The center of pressure.
-  static cgal::Point3 CenterOfPressureApexUp(
+  static geom::Point3 CenterOfPressureApexUp(
     double _z0,
-    const cgal::Point3& _H,
-    const cgal::Point3& _M,
-    const cgal::Point3& _B);
+    const geom::Point3& _H,
+    const geom::Point3& _M,
+    const geom::Point3& _B);
 
   /// \brief Compute the centre of pressure for a triangle with horizontal
   ///        base and apex down.
@@ -132,11 +132,11 @@ class Physics
   /// \param[in] _M   A base vertex with L.z < M.z.
   /// \param[in] _B   The midpoint of the base B.z = M.z.
   /// \return         The center of pressure.
-  static cgal::Point3 CenterOfPressureApexDn(
+  static geom::Point3 CenterOfPressureApexDn(
     double _z0,
-    const cgal::Point3& _L,
-    const cgal::Point3& _M,
-    const cgal::Point3& _B);
+    const geom::Point3& _L,
+    const geom::Point3& _M,
+    const geom::Point3& _B);
 
   /// \brief Calculate the buoyancy force for a submerged triangle (H, M, L).
   //
@@ -151,13 +151,13 @@ class Physics
   /// \param[out] _force  The resultant force.
   static void BuoyancyForceAtCenterOfPressure(
     double _depthC,
-    const cgal::Point3& _C,
-    const cgal::Point3& _H,
-    const cgal::Point3& _M,
-    const cgal::Point3& _L,
-    const cgal::Vector3& _normal,
-    cgal::Point3& _center,
-    cgal::Vector3& _force);
+    const geom::Point3& _C,
+    const geom::Point3& _H,
+    const geom::Point3& _M,
+    const geom::Point3& _L,
+    const geom::Vector3& _normal,
+    geom::Point3& _center,
+    geom::Vector3& _force);
 
   /// \brief Calculate the buoyancy force at the centroid for a
   ///        submerged triangle.
@@ -169,9 +169,9 @@ class Physics
   /// \param[out] _force            The buoyancy force applied at the center.
   static void BuoyancyForceAtCentroid(
     const WavefieldSampler& _wavefieldSampler,
-    const cgal::Triangle& _triangle,
-    cgal::Point3& _center,
-    cgal::Vector3& _force);
+    const geom::Triangle& _triangle,
+    geom::Point3& _center,
+    geom::Vector3& _force);
 
   /// \brief Calculate the buoyancy force and center of pressure for
   ///        a submerged triangle.
@@ -184,9 +184,9 @@ class Physics
   /// \param[out] _force            The buoyancy force applied at the center.
   static void BuoyancyForceAtCenterOfPressure(
     const WavefieldSampler& _wavefieldSampler,
-    const cgal::Triangle& _triangle,
-    cgal::Point3& _center,
-    cgal::Vector3& _force);
+    const geom::Triangle& _triangle,
+    geom::Point3& _center,
+    geom::Vector3& _force);
 
   /// \brief Calculate the height map for each triangle vertex for a wavefield.
   ///
@@ -196,7 +196,7 @@ class Physics
   ///                               each vertex.
   static std::array<double, 3> ComputeHeightMap(
     const WavefieldSampler& _wavefieldSampler,
-    const cgal::Triangle& _triangle);
+    const geom::Triangle& _triangle);
 };
 
 //////////////////////////////////////////////////
@@ -305,12 +305,12 @@ class TriangleProperties
  public:
   TriangleProperties() :
     index(0),
-    normal(CGAL::NULL_VECTOR),
+    normal(geom::NullVector()),
     area(std::numeric_limits<double>::signaling_NaN()),
     subArea(std::numeric_limits<double>::signaling_NaN()),
-    vh(CGAL::ORIGIN),
-    vm(CGAL::ORIGIN),
-    vl(CGAL::ORIGIN),
+    vh(geom::Origin()),
+    vm(geom::Origin()),
+    vl(geom::Origin()),
     hh(std::numeric_limits<double>::signaling_NaN()),
     hm(std::numeric_limits<double>::signaling_NaN()),
     hl(std::numeric_limits<double>::signaling_NaN())
@@ -318,13 +318,13 @@ class TriangleProperties
   }
 
   Index index;                        // index to the original triangle
-  cgal::Vector3 normal;               // triangle normal
+  geom::Vector3 normal;               // triangle normal
   double area;                        // area
   double subArea;                     // submerged area
   std::array<double, 3> heightMap;    // heightmap[3] - unsorted
-  cgal::Point3 vh;                    // high vertex
-  cgal::Point3 vm;                    // mid vertex
-  cgal::Point3 vl;                    // low vertex
+  geom::Point3 vh;                    // high vertex
+  geom::Point3 vm;                    // mid vertex
+  geom::Point3 vl;                    // low vertex
   double hh;                          // high vertex height
   double hm;                          // mid vertex height
   double hl;                          // low vertex height
@@ -335,49 +335,49 @@ class SubmergedTriangleProperties
  public:
   SubmergedTriangleProperties() :
     index(0),
-    normal(CGAL::NULL_VECTOR),
-    centroid(CGAL::ORIGIN),
-    xr(CGAL::NULL_VECTOR),
+    normal(geom::NullVector()),
+    centroid(geom::Origin()),
+    xr(geom::NullVector()),
     area(std::numeric_limits<double>::signaling_NaN()),
-    vp(CGAL::NULL_VECTOR),
-    up(CGAL::NULL_VECTOR),
+    vp(geom::NullVector()),
+    up(geom::NullVector()),
     cosTheta(std::numeric_limits<double>::signaling_NaN()),
-    vn(CGAL::NULL_VECTOR),
-    vt(CGAL::NULL_VECTOR),
-    ut(CGAL::NULL_VECTOR),
-    uf(CGAL::NULL_VECTOR),
-    vf(CGAL::NULL_VECTOR)
+    vn(geom::NullVector()),
+    vt(geom::NullVector()),
+    ut(geom::NullVector()),
+    uf(geom::NullVector()),
+    vf(geom::NullVector())
   {
   }
 
   Index index;            // index to the original triangle
-  cgal::Vector3 normal;   // triangle normal
-  cgal::Point3 centroid;  // triangle centroid = r
-  cgal::Vector3 xr;       // xr = centroid - CoM = (r - x)
+  geom::Vector3 normal;   // triangle normal
+  geom::Point3 centroid;  // triangle centroid = r
+  geom::Vector3 xr;       // xr = centroid - CoM = (r - x)
   double area;            // area
-  cgal::Vector3 vp;       // point velocity vp = v + omega x r,
+  geom::Vector3 vp;       // point velocity vp = v + omega x r,
   // where r = centroid - CoM
-  cgal::Vector3 up;       // normalized point velocity.
+  geom::Vector3 up;       // normalized point velocity.
   double cosTheta;        // cos[theta] = up . normal
-  cgal::Vector3 vn;       // point velocity normal to surface
+  geom::Vector3 vn;       // point velocity normal to surface
   // vn = (vp . normal) normal
-  cgal::Vector3 vt;       // point velocity tangential to surface
+  geom::Vector3 vt;       // point velocity tangential to surface
   // vt = vp - vn
-  cgal::Vector3 ut;       // normalized tangential point velocity.
-  cgal::Vector3 uf;       // direction of tangential flow.
+  geom::Vector3 ut;       // normalized tangential point velocity.
+  geom::Vector3 uf;       // direction of tangential flow.
   // uf = - vt / ||vt|| = - ut
-  cgal::Vector3 vf;       // tangential flow vf = ||vp|| uf
+  geom::Vector3 vf;       // tangential flow vf = ||vp|| uf
 
   // NEW: fluid velocity fields
-  cgal::Vector3 v_orbital;   // wave orbital velocity at centroid depth
-  cgal::Vector3 v_current;   // bulk water current (HEC-RAS, optional)
-  cgal::Vector3 v_fluid;     // total fluid velocity = v_orbital + v_current
-  cgal::Vector3 v_rel;       // relative velocity = vp - v_fluid
+  geom::Vector3 v_orbital;   // wave orbital velocity at centroid depth
+  geom::Vector3 v_current;   // bulk water current (HEC-RAS, optional)
+  geom::Vector3 v_fluid;     // total fluid velocity = v_orbital + v_current
+  geom::Vector3 v_rel;       // relative velocity = vp - v_fluid
                              // (hull velocity relative to fluid)
 
 // NEW: foil decomposition of v_rel
-  cgal::Vector3 v_rel_n;     // normal component of v_rel
-  cgal::Vector3 v_rel_t;     // tangential component of v_rel
+  geom::Vector3 v_rel_n;     // normal component of v_rel
+  geom::Vector3 v_rel_t;     // tangential component of v_rel
   double        alpha;       // angle of attack (rad)
   double        v_rel_mag;   // |v_rel|
 };
@@ -398,7 +398,7 @@ class Hydrodynamics
   /// \param[in] _wavefieldSampler  An object for sampling the wave field.
   Hydrodynamics(
     std::shared_ptr<const HydrodynamicsParameters> _params,
-    std::shared_ptr<const cgal::Mesh> _linkMesh,
+    std::shared_ptr<const geom::Mesh> _linkMesh,
     std::shared_ptr<const WavefieldSampler> _wavefieldSampler);
 
   /// \brief Update the wavefield sampler given the motion of the rigid body.
@@ -413,36 +413,36 @@ class Hydrodynamics
   void Update(
     std::shared_ptr<const WavefieldSampler> _wavefieldSampler,
     const math::Pose3d& _pose,
-    const cgal::Vector3& _linVelocity,
-    const cgal::Vector3& _angVelocity,
+    const geom::Vector3& _linVelocity,
+    const geom::Vector3& _angVelocity,
     const std::chrono::_V2::steady_clock::duration& simTime);
 
   /// \brief Compute the hydrostatic and hydrodynamic forces.
   ///
   /// \return The force in the world frame.
-  const cgal::Vector3& Force() const;
+  const geom::Vector3& Force() const;
 
   /// \brief Compute the hydrostatic and hydrodynamic torques.
   ///
   /// \return The torque in the world frame.
-  const cgal::Vector3& Torque() const;
+  const geom::Vector3& Torque() const;
 
   /// \brief The current waterline.
   ///
   /// \return A vector containing Line elements that comnprise the waterline.
-  const std::vector<cgal::Line>& GetWaterline() const;
+  const std::vector<geom::Line>& GetWaterline() const;
 
   /// \brief The current list of submerged triangles.
   ///
   /// \return A vector containing the trianges that are under water.
-  const std::vector<cgal::Triangle>& GetSubmergedTriangles() const;
+  const std::vector<geom::Triangle>& GetSubmergedTriangles() const;
 
   const std::vector<TriangleProperties>& GetTriangleProperties() const;
 
   const std::vector<SubmergedTriangleProperties>&
       GetSubmergedTriangleProperties() const;
 
-  const gz::cgal::Vector3 GetWaterCurrentCoM() const;
+  const gz::waves::geom::Vector3 GetWaterCurrentCoM() const;
 
  private:
   /// \internal
@@ -457,11 +457,11 @@ class Hydrodynamics
   ///                       and split if needed.
   /// \param[out] _triProps The computed properties for the input triangle.
   void PopulateSubmergedTriangle(
-    const cgal::Triangle& _triangle,
+    const geom::Triangle& _triangle,
     TriangleProperties& _triProps,
-    std::vector<cgal::Triangle>& _subTris,
+    std::vector<geom::Triangle>& _subTris,
     std::vector<SubmergedTriangleProperties>& _subProps,
-    std::vector<cgal::Line>& _waterlines);
+    std::vector<geom::Line>& _waterlines);
 
   /// internal
   /// \brief Split a triangle with one submerged vertex.
@@ -469,9 +469,9 @@ class Hydrodynamics
   /// \param[in] _triProps The properties for the partially submerged triangle.
   void SplitPartiallySubmergedTriangle1(
     TriangleProperties& _triProps,
-    std::vector<cgal::Triangle>& _subTris,
+    std::vector<geom::Triangle>& _subTris,
     std::vector<SubmergedTriangleProperties>& _subProps,
-    std::vector<cgal::Line>& _waterlines);
+    std::vector<geom::Line>& _waterlines);
 
   /// internal
   /// \brief Split a triangle with two submerged vertices.
@@ -479,9 +479,9 @@ class Hydrodynamics
   /// \param[in] _triProps The properties for the partially submerged triangle.
   void SplitPartiallySubmergedTriangle2(
     TriangleProperties& _triProps,
-    std::vector<cgal::Triangle>& _subTris,
+    std::vector<geom::Triangle>& _subTris,
     std::vector<SubmergedTriangleProperties>& _subProps,
-    std::vector<cgal::Line>& _waterlines);
+    std::vector<geom::Line>& _waterlines);
 
   /// internal
   /// \brief Add a fully submerged triangle.
@@ -489,7 +489,7 @@ class Hydrodynamics
   /// \param[in] _triProps The properties for the fully submerged triangle.
   void AddFullySubmergedTriangle(
     TriangleProperties& _triProps,
-    std::vector<cgal::Triangle>& _subTris,
+    std::vector<geom::Triangle>& _subTris,
     std::vector<SubmergedTriangleProperties>& _subProps);
 
   /// internal
@@ -513,9 +513,9 @@ class Hydrodynamics
   /// Mutates props in place; must be called before any force function.
   static void ComputePointVelocities(
       SubmergedTriangleProperties& props,
-      const cgal::Point3& position,
-      const cgal::Vector3& v_body,
-      const cgal::Vector3& omega,
+      const geom::Point3& position,
+      const geom::Vector3& v_body,
+      const geom::Vector3& omega,
       const WavefieldSampler& wavefieldSampler,
       double t,
       const WaterCurrentGrid& currentGrid);
@@ -537,17 +537,17 @@ class Hydrodynamics
   /// Returns {force, torque} contribution to accumulate.
   /// Also writes the buoyancy force and center-of-pressure to
   /// bForce_out / bCenter_out.
-  static std::pair<cgal::Vector3, cgal::Vector3> ComputeBuoyancyForce(
+  static std::pair<geom::Vector3, geom::Vector3> ComputeBuoyancyForce(
       const WavefieldSampler& wavefieldSampler,
-      const cgal::Triangle& subTri,
-      const cgal::Point3& position,
-      cgal::Vector3& bForce_out,
-      cgal::Point3& bCenter_out);
+      const geom::Triangle& subTri,
+      const geom::Point3& position,
+      geom::Vector3& bForce_out,
+      geom::Point3& bCenter_out);
 
   /// internal
   /// \brief Viscous drag force for one submerged triangle.
   /// Returns {force, torque} contribution to accumulate.
-  static std::pair<cgal::Vector3, cgal::Vector3> ComputeViscousDragForce(
+  static std::pair<geom::Vector3, geom::Vector3> ComputeViscousDragForce(
       const SubmergedTriangleProperties& props,
       double rho,
       double cF);
@@ -555,7 +555,7 @@ class Hydrodynamics
   /// internal
   /// \brief Pressure drag force for one submerged triangle.
   /// Returns {force, torque} contribution to accumulate.
-  static std::pair<cgal::Vector3, cgal::Vector3> ComputePressureDragForce(
+  static std::pair<geom::Vector3, geom::Vector3> ComputePressureDragForce(
       const SubmergedTriangleProperties& props,
       double cPDrag1, double cPDrag2, double fPDrag,
       double cSDrag1, double cSDrag2, double fSDrag,
@@ -565,7 +565,7 @@ class Hydrodynamics
   /// \brief Foil lift force for one submerged triangle.
   /// Returns {force, torque} contribution; returns zero pair if the triangle
   /// is not a qualifying planing surface.
-  static std::pair<cgal::Vector3, cgal::Vector3> ComputeFoilLiftForce(
+  static std::pair<geom::Vector3, geom::Vector3> ComputeFoilLiftForce(
       const SubmergedTriangleProperties& props,
       double rho,
       double Cl_alpha, double alpha_stall, double Cl_max,

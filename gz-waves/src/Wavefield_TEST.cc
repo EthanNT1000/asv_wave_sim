@@ -22,9 +22,11 @@
 #include <string>
 #include <vector>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/Types.hh"
 #include "gz/waves/Wavefield.hh"
+
+namespace geom = gz::waves::geom;
 
 using gz::waves::Index;
 

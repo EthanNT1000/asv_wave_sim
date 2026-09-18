@@ -23,7 +23,7 @@
 
 #include <gz/common/Console.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
 namespace gz
 {
@@ -78,7 +78,7 @@ void MeshTools::FillArrays(
 
 //////////////////////////////////////////////////
 void MeshTools::MakeSurfaceMesh(const gz::common::Mesh& _source,
-    cgal::Mesh& _target)
+    geom::Mesh& _target)
 {
   std::vector<float> vertices;
   std::vector<int>   indices;
@@ -91,12 +91,9 @@ void MeshTools::MakeSurfaceMesh(const gz::common::Mesh& _source,
     auto&& v0 = vertices[i++];
     auto&& v1 = vertices[i++];
     auto&& v2 = vertices[i++];
-    cgal::Point3 p(v0, v1, v2);
+    geom::Point3 p(v0, v1, v2);
 
-    // @DEBUG_INFO
-    // auto& v =
-    _target.add_vertex(p);
-    // gzmsg << v << ": " << _target.point(v) << std::endl;
+    geom::AddVertex(_target, p);
   }
 
   // Faces
@@ -105,22 +102,10 @@ void MeshTools::MakeSurfaceMesh(const gz::common::Mesh& _source,
     // @DEBUG_INFO
     // gzmsg << "face" << i/3 << std::endl;
 
-    auto v0 = _target.vertices().begin();
-    auto v1 = _target.vertices().begin();
-    auto v2 = _target.vertices().begin();
     auto i0 = indices[i++];
     auto i1 = indices[i++];
     auto i2 = indices[i++];
-    std::advance(v0, i0);
-    std::advance(v1, i1);
-    std::advance(v2, i2);
-    _target.add_face(*v0, *v1, *v2);
-
-    // @DEBUG_INFO
-    // gzmsg << i0 << ", " << i1 << ", " << i2 << std::endl;
-    // gzmsg << *v0 << ": " << _target.point(*v0) << std::endl;
-    // gzmsg << *v1 << ": " << _target.point(*v1) << std::endl;
-    // gzmsg << *v2 << ": " << _target.point(*v2) << std::endl;
+    geom::AddFace(_target, i0, i1, i2);
   }
 }
 

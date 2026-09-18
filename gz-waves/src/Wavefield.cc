@@ -26,7 +26,7 @@
 #include <gz/common/Console.hh>
 #include <gz/transport/Node.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/OceanTile.hh"
 #include "gz/waves/TriangulatedGrid.hh"
 #include "gz/waves/Types.hh"
@@ -116,7 +116,7 @@ bool Wavefield::Height(const Eigen::Vector3d& point, double& height) const
   };
 
   // Obtain the point modulo the tile dimensions
-  cgal::Point3 modulo_point(px_mod(point.x()), py_mod(point.y()), point.z());
+  geom::Point3 modulo_point(px_mod(point.x()), py_mod(point.y()), point.z());
 
   return impl_->tri_grid_->Height(modulo_point, height);
 }

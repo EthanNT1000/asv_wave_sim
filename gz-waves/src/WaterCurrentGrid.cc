@@ -88,7 +88,7 @@ bool WaterCurrentGrid::LoadFromFile(const std::string& path)
     return true;
 }
 
-gz::cgal::Vector3 WaterCurrentGrid::SampleAt(double x, double y) const
+gz::waves::geom::Vector3 WaterCurrentGrid::SampleAt(double x, double y) const
 {
     if (!loaded_) return {0.0, 0.0, 0.0};
 

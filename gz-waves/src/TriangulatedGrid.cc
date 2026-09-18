@@ -30,6 +30,7 @@
 #include <CGAL/algorithm.h>
 #include <CGAL/point_generators_2.h>
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <utility>
@@ -50,25 +51,25 @@ class TriangulatedGrid::Private {
   void CreateMesh();
   void CreateTriangulation();
 
-  bool Locate(const cgal::Point3& query, int64_t& faceIndex) const;
-  bool Height(const cgal::Point3& query, double& height) const;
-  bool Height(const std::vector<cgal::Point3>& queries,
+  bool Locate(const geom::Point3& query, int64_t& faceIndex) const;
+  bool Height(const geom::Point3& query, double& height) const;
+  bool Height(const std::vector<geom::Point3>& queries,
       std::vector<double>& heights) const;
   bool Interpolate(TriangulatedGrid& patch) const;
 
   const Point3Range& Points() const;
   const Index3Range& Indices() const;
-  const cgal::Point3& Origin() const;
+  const geom::Point3& Origin() const;
   void ApplyPose(const gz::math::Pose3d& pose);
 
   bool IsValid(bool verbose = false) const;
   void DebugPrintMesh() const;
   void DebugPrintTriangulation() const;
-  void UpdatePoints(const std::vector<cgal::Point3>& points);
+  void UpdatePoints(const std::vector<geom::Point3>& points);
   void UpdatePoints(const std::vector<gz::math::Vector3d>& from);
 
   // void UpdatePoints(const std::vector<Ogre::Vector3>& from);
-  void UpdatePoints(const cgal::Mesh& from);
+  void UpdatePoints(const geom::Mesh& from);
 
   // Type definitions - use a consistent Kernel
   // typedef Kernel Kernel;
@@ -94,9 +95,9 @@ class TriangulatedGrid::Private {
   double ly_;
 
   // Mesh
-  cgal::Point3              origin_;
-  std::vector<cgal::Point3> points0_;
-  std::vector<cgal::Point3> points_;
+  geom::Point3              origin_;
+  std::vector<geom::Point3> points0_;
+  std::vector<geom::Point3> points_;
   std::vector<Index3> indices_;
   std::vector<Index3> infinite_indices_;
 
@@ -110,7 +111,7 @@ TriangulatedGrid::Private::~Private() {
 
 //////////////////////////////////////////////////
 TriangulatedGrid::Private::Private(Index nx, Index ny, double lx, double ly) :
-  nx_(nx), ny_(ny), lx_(lx), ly_(ly), origin_(CGAL::ORIGIN) {
+  nx_(nx), ny_(ny), lx_(lx), ly_(ly), origin_(geom::Origin()) {
 }
 
 //////////////////////////////////////////////////
@@ -127,7 +128,7 @@ void TriangulatedGrid::Private::CreateMesh() {
     for (int64_t ix=0; ix <= nx_; ++ix) {
       // Vertex position
       double px = ix * dlx + lxm;
-      cgal::Point3 point(px, py, 0.0);
+      geom::Point3 point(px, py, 0.0);
       points_.push_back(point);
     }
   }
@@ -178,7 +179,7 @@ void TriangulatedGrid::Private::CreateTriangulation() {
   // CGAL::Timer timer;
 
   // Point with info
-  // std::vector<std::pair<cgal::Point3, int64_t>> pointsWithInfo;
+  // std::vector<std::pair<geom::Point3, int64_t>> pointsWithInfo;
   // for (int64_t i=0; i<points_.size(); ++i) {
   //   pointsWithInfo.push_back(std::make_pair(points_[i], i));
   // }
@@ -249,7 +250,7 @@ void TriangulatedGrid::Private::CreateTriangulation() {
     auto& p0 = points_[f->at(0)];
     auto& p1 = points_[f->at(1)];
     auto& p2 = points_[f->at(2)];
-    cgal::Point3 p(
+    geom::Point3 p(
       (p0.x() + p1.x() + p2.x())/3.0,
       (p0.y() + p1.y() + p2.y())/3.0,
       0.0);
@@ -267,7 +268,7 @@ void TriangulatedGrid::Private::CreateTriangulation() {
 
 //////////////////////////////////////////////////
 bool TriangulatedGrid::Private::Locate(
-    const cgal::Point3& query, int64_t& faceIndex) const {
+    const geom::Point3& query, int64_t& faceIndex) const {
   auto fh = tri_.locate(query);
   if (fh != nullptr) {
     faceIndex = fh->info();
@@ -278,7 +279,7 @@ bool TriangulatedGrid::Private::Locate(
 
 //////////////////////////////////////////////////
 bool TriangulatedGrid::Private::Height(
-    const cgal::Point3& query, double& height) const {
+    const geom::Point3& query, double& height) const {
   bool found = false;
   height = 0.0;
   auto fh = tri_.locate(query);
@@ -289,9 +290,9 @@ bool TriangulatedGrid::Private::Height(
     const auto& p2 = fh->vertex(2)->point();
 
     // Height query
-    const cgal::Direction3 direction(0, 0, 1);
-    cgal::Point3 intersection(query);
-    cgal::Triangle triangle(p0, p1, p2);
+    const geom::Direction3 direction(0, 0, 1);
+    geom::Point3 intersection(query);
+    geom::Triangle triangle(p0, p1, p2);
 
     found = Geometry::LineIntersectsTriangle(
         query, direction, triangle, intersection);
@@ -305,7 +306,7 @@ bool TriangulatedGrid::Private::Height(
 
 //////////////////////////////////////////////////
 bool TriangulatedGrid::Private::Height(
-    const std::vector<cgal::Point3>& queries,
+    const std::vector<geom::Point3>& queries,
     std::vector<double>& heights) const
 {
   bool foundAll = true;
@@ -313,7 +314,7 @@ bool TriangulatedGrid::Private::Height(
   for (uint64_t i=0; i < heights.size(); ++i)
   {
     double height_i = 0.0;
-    const cgal::Point3& query = queries[i];
+    const geom::Point3& query = queries[i];
     fh = tri_.locate(query, fh);
     bool found = fh != nullptr;
     if (found) {
@@ -323,9 +324,9 @@ bool TriangulatedGrid::Private::Height(
       const auto& p2 = fh->vertex(2)->point();
 
       // Height query
-      const cgal::Direction3 direction(0, 0, 1);
-      cgal::Point3 intersection(query);
-      cgal::Triangle triangle(p0, p1, p2);
+      const geom::Direction3 direction(0, 0, 1);
+      geom::Point3 intersection(query);
+      geom::Triangle triangle(p0, p1, p2);
 
       found = Geometry::LineIntersectsTriangle(
           query, direction, triangle, intersection);
@@ -348,7 +349,7 @@ bool TriangulatedGrid::Private::Interpolate(TriangulatedGrid& patch) const {
   for (auto it = patch.impl_->points_.begin();
       it != patch.impl_->points_.end(); ++it) {
     double height = 0.0;
-    const cgal::Point3& query = *it;
+    const geom::Point3& query = *it;
     fh = tri_.locate(query, fh);
     bool found = fh != nullptr;
     if (found) {
@@ -358,9 +359,9 @@ bool TriangulatedGrid::Private::Interpolate(TriangulatedGrid& patch) const {
       const auto& p2 = fh->vertex(2)->point();
 
       // Height query
-      const cgal::Direction3 direction(0, 0, 1);
-      cgal::Point3 intersection(query);
-      cgal::Triangle triangle(p0, p1, p2);
+      const geom::Direction3 direction(0, 0, 1);
+      geom::Point3 intersection(query);
+      geom::Triangle triangle(p0, p1, p2);
 
       found = Geometry::LineIntersectsTriangle(
           query, direction, triangle, intersection);
@@ -375,7 +376,7 @@ bool TriangulatedGrid::Private::Interpolate(TriangulatedGrid& patch) const {
       }
     }
     // @NOTE this assumes the patch initially has height = 0.0;
-    *it = cgal::Point3(query.x(), query.y(), height);
+    *it = geom::Point3(query.x(), query.y(), height);
 
     foundAll &= found;
   }
@@ -393,15 +394,15 @@ const Index3Range& TriangulatedGrid::Private::Indices() const {
 }
 
 //////////////////////////////////////////////////
-const cgal::Point3& TriangulatedGrid::Private::Origin() const {
+const geom::Point3& TriangulatedGrid::Private::Origin() const {
   return origin_;
 }
 
 //////////////////////////////////////////////////
 void TriangulatedGrid::Private::ApplyPose(const gz::math::Pose3d& pose) {
   // Origin - slide the patch in the xy - plane only
-  cgal::Point3 o = CGAL::ORIGIN;
-  origin_ = cgal::Point3(o.x() + pose.Pos().X(), o.y() + pose.Pos().Y(), o.z());
+  geom::Point3 o = geom::Origin();
+  origin_ = geom::Point3(o.x() + pose.Pos().X(), o.y() + pose.Pos().Y(), o.z());
 
   // Mesh points
   for (
@@ -411,7 +412,7 @@ void TriangulatedGrid::Private::ApplyPose(const gz::math::Pose3d& pose) {
   {
     const auto& p0 = *it.first;
     auto& p = *it.second;
-    p = cgal::Point3(p0.x() + pose.Pos().X(), p0.y() + pose.Pos().Y(), p0.z());
+    p = geom::Point3(p0.x() + pose.Pos().X(), p0.y() + pose.Pos().Y(), p0.z());
   }
 
   // Triangulation points
@@ -520,7 +521,7 @@ void TriangulatedGrid::Private::DebugPrintTriangulation() const {
 
 //////////////////////////////////////////////////
 void TriangulatedGrid::Private::UpdatePoints(
-      const std::vector<cgal::Point3>& from) {
+      const std::vector<geom::Point3>& from) {
   // Mesh points
   points_ = from;
 
@@ -540,7 +541,7 @@ void TriangulatedGrid::Private::UpdatePoints(
   auto it_from = from.begin();
   for ( ; it_to != points_.end() && it_from != from.end();
       ++it_to, ++it_from) {
-    *it_to = cgal::Point3(it_from->X(), it_from->Y(), it_from->Z());
+    *it_to = geom::Point3(it_from->X(), it_from->Y(), it_from->Z());
   }
 
   // Triangulation points
@@ -552,14 +553,12 @@ void TriangulatedGrid::Private::UpdatePoints(
 }
 
 //////////////////////////////////////////////////
-void TriangulatedGrid::Private::UpdatePoints(const cgal::Mesh& from) {
+void TriangulatedGrid::Private::UpdatePoints(const geom::Mesh& from) {
   // Mesh points
-  auto it_to = points_.begin();
-  auto it_from = std::begin(from.vertices());
-  for ( ; it_to != points_.end() && it_from != std::end(from.vertices());
-      ++it_to, ++it_from) {
-    const cgal::Point3& p = from.point(*it_from);
-    *it_to = cgal::Point3(p.x(), p.y(), p.z());
+  const Index n = std::min<Index>(points_.size(), geom::VertexCount(from));
+  for (Index i = 0; i < n; ++i) {
+    const geom::Point3& p = geom::VertexPoint(from, i);
+    points_[i] = geom::Point3(p.x(), p.y(), p.z());
   }
 
   // Triangulation points
@@ -606,21 +605,21 @@ std::unique_ptr<TriangulatedGrid> TriangulatedGrid::Create(
 }
 
 //////////////////////////////////////////////////
-bool TriangulatedGrid::Locate(const cgal::Point3& query,
+bool TriangulatedGrid::Locate(const geom::Point3& query,
     int64_t& faceIndex) const
 {
   return impl_->Locate(query, faceIndex);
 }
 
 //////////////////////////////////////////////////
-bool TriangulatedGrid::Height(const cgal::Point3& query,
+bool TriangulatedGrid::Height(const geom::Point3& query,
     double& height) const
 {
   return impl_->Height(query, height);
 }
 
 //////////////////////////////////////////////////
-bool TriangulatedGrid::Height(const std::vector<cgal::Point3>& queries,
+bool TriangulatedGrid::Height(const std::vector<geom::Point3>& queries,
     std::vector<double>& heights) const
 {
   return impl_->Height(queries, heights);
@@ -645,7 +644,7 @@ const Index3Range& TriangulatedGrid::Indices() const
 }
 
 //////////////////////////////////////////////////
-const cgal::Point3& TriangulatedGrid::Origin() const
+const geom::Point3& TriangulatedGrid::Origin() const
 {
   return impl_->Origin();
 }
@@ -675,7 +674,7 @@ void TriangulatedGrid::DebugPrintTriangulation() const
 }
 
 //////////////////////////////////////////////////
-void TriangulatedGrid::UpdatePoints(const std::vector<cgal::Point3>& from)
+void TriangulatedGrid::UpdatePoints(const std::vector<geom::Point3>& from)
 {
   impl_->UpdatePoints(from);
 }
@@ -688,7 +687,7 @@ void TriangulatedGrid::UpdatePoints(
 }
 
 //////////////////////////////////////////////////
-void TriangulatedGrid::UpdatePoints(const cgal::Mesh& from)
+void TriangulatedGrid::UpdatePoints(const geom::Mesh& from)
 {
   impl_->UpdatePoints(from);
 }

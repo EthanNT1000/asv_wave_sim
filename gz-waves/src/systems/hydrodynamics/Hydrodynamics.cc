@@ -77,6 +77,8 @@ namespace sim
 {
 namespace systems
 {
+namespace geom = gz::waves::geom;
+
 //////////////////////////////////////////////////
 // Utilties
 
@@ -90,23 +92,23 @@ namespace systems
 /// \param[out] _target The transformed mesh.
 void ApplyPose(
   const gz::math::Pose3d& _pose,
-  const cgal::Mesh& _source,
-  cgal::Mesh& _target)
+  const geom::Mesh& _source,
+  geom::Mesh& _target)
 {
   // Source and target share the same topology (target is a copy of source,
   // no vertex deletions ever occur), so vertex indices are identical 0..N-1.
   const auto& rot = _pose.Rot();
   const auto& pos = _pose.Pos();
-  const int n = static_cast<int>(_source.num_vertices());
+  const int n = static_cast<int>(geom::VertexCount(_source));
   const int nT = std::max(1, std::min(omp_get_max_threads(), n / 32));
   #pragma omp parallel for schedule(static) num_threads(nT)
   for (int i = 0; i < n; ++i)
   {
-    const cgal::Mesh::Vertex_index vi(i);
-    const cgal::Point3& p0 = _source.point(vi);
+    const geom::Point3& p0 = geom::VertexPoint(_source, i);
     gz::math::Vector3d gzP1 =
         rot.RotateVector({p0.x(), p0.y(), p0.z()}) + pos;
-    _target.point(vi) = cgal::Point3(gzP1.X(), gzP1.Y(), gzP1.Z());
+    geom::SetVertexPoint(_target, i,
+        geom::Point3(gzP1.X(), gzP1.Y(), gzP1.Z()));
   }
 }
 
@@ -174,13 +176,13 @@ void AddAxisAlignedBox(const Entity& _entity,
 #endif
 
 //////////////////////////////////////////////////
-math::AxisAlignedBox CreateAxisAlignedBox(cgal::MeshPtr _mesh)
+math::AxisAlignedBox CreateAxisAlignedBox(geom::MeshPtr _mesh)
 {
-  if (std::begin(_mesh->vertices()) == std::end(_mesh->vertices()))
+  const waves::Index nVerts = geom::VertexCount(*_mesh);
+  if (nVerts == 0)
     return math::AxisAlignedBox();
 
-  auto v0 = std::begin(_mesh->vertices());
-  auto& p0 = _mesh->point(*v0);
+  const auto& p0 = geom::VertexPoint(*_mesh, 0);
 
   double min_x = p0.x();
   double min_y = p0.y();
@@ -189,9 +191,9 @@ math::AxisAlignedBox CreateAxisAlignedBox(cgal::MeshPtr _mesh)
   double max_y = min_y;
   double max_z = min_z;
 
-  for (const auto& vertex : _mesh->vertices())
+  for (waves::Index v = 1; v < nVerts; ++v)
   {
-    auto& point = _mesh->point(vertex);
+    const auto& point = geom::VertexPoint(*_mesh, v);
     min_x = std::min(point.x(), min_x);
     min_y = std::min(point.y(), min_y);
     min_z = std::min(point.z(), min_z);
@@ -231,10 +233,10 @@ public: sim::Link link { kNullEntity };
 public: waves::WavefieldSamplerPtr wavefieldSampler;
 
       /// \brief The initial meshes for this link.
-public: std::vector<cgal::MeshPtr> initLinkMeshes;
+public: std::vector<geom::MeshPtr> initLinkMeshes;
 
       /// \brief The transformed meshes for this link.
-public: std::vector<cgal::MeshPtr> linkMeshes;
+public: std::vector<geom::MeshPtr> linkMeshes;
 
       /// \brief The collision entities for this link.
 public: std::vector<Entity> linkCollisions;
@@ -306,7 +308,7 @@ public: void CreateCollisionMeshes(
   EntityComponentManager& _ecm,
   sim::Model _model,
   std::vector<sim::Entity>& _links,
-  std::vector<std::vector<cgal::MeshPtr>>& _meshes,
+  std::vector<std::vector<geom::MeshPtr>>& _meshes,
   std::vector<std::vector<Entity>>& _collisions);
 
       /// \brief Model interface
@@ -695,7 +697,7 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
 
   // Populate link meshes
   std::vector<sim::Entity> links;
-  std::vector<std::vector<cgal::MeshPtr>> meshes;
+  std::vector<std::vector<geom::MeshPtr>> meshes;
   std::vector<std::vector<Entity>> collisions;
   this->CreateCollisionMeshes(_ecm, this->model, links, meshes, collisions);
   gzmsg << "Hydrodynamics: links:  " << links.size()
@@ -770,8 +772,8 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
       hd->link.WorldLinearVelocity(_ecm).value();
     const gz::math::Vector3d linkAngVel =
       hd->link.WorldAngularVelocity(_ecm).value();
-    cgal::Vector3 angVelocity = waves::ToVector3(linkAngVel);
-    cgal::Vector3 linVelocity = waves::ToVector3(
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
+    geom::Vector3 linVelocity = waves::ToVector3(
       linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // First pass - store collisions and create bounding box
@@ -779,9 +781,9 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
     for (waves::Index j = 0; j < meshCount; ++j)
     {
       // Mesh (SurfaceMesh copy performs a deep copy of all properties)
-      std::shared_ptr<cgal::Mesh> initLinkMesh = meshes[i][j];
-      std::shared_ptr<cgal::Mesh> linkMesh =
-        std::make_shared<cgal::Mesh>(*initLinkMesh);
+      std::shared_ptr<geom::Mesh> initLinkMesh = meshes[i][j];
+      std::shared_ptr<geom::Mesh> linkMesh =
+        std::make_shared<geom::Mesh>(*initLinkMesh);
       GZ_ASSERT(linkMesh != nullptr,
         "Invalid Mesh returned from CreateCollisionMeshes");
 
@@ -875,7 +877,7 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
   // Wind velocity from the world Wind entity — same source the anemometer uses.
   // Read once per timestep; the value is constant across all links.
-  cgal::Vector3 windVelocity = CGAL::NULL_VECTOR;
+  geom::Vector3 windVelocity = geom::NullVector();
   if (this->aeroDragOn)
   {
     Entity windEntity = _ecm.EntityByComponents(components::Wind());
@@ -921,8 +923,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       hd->link.WorldLinearVelocity(_ecm).value();
     const gz::math::Vector3d linkAngVel =
       hd->link.WorldAngularVelocity(_ecm).value();
-    cgal::Vector3 angVelocity = waves::ToVector3(linkAngVel);
-    cgal::Vector3 linVelocity = waves::ToVector3(
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
+    geom::Vector3 linVelocity = waves::ToVector3(
       linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // Meshes
@@ -987,7 +989,7 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       {
         static constexpr double kRhoAir = 1.225;  // kg/m³
 
-        cgal::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
+        geom::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
 
         const auto& tris = hd->hydrodynamics[j]->GetTriangleProperties();
         const int nTris = static_cast<int>(tris.size());
@@ -1017,35 +1019,35 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
           // Normalize outward face normal.
           double nLen = std::sqrt(
-              CGAL::to_double(tri.normal.squared_length()));
+              geom::ToDouble(geom::SquaredLength(tri.normal)));
           if (nLen < 1e-9) continue;
-          cgal::Vector3 nHat = tri.normal / nLen;
+          geom::Vector3 nHat = tri.normal / nLen;
 
           // Hull velocity at the triangle centroid (CoM + angular correction).
-          cgal::Vector3 centroid = cgal::Vector3(
+          geom::Vector3 centroid = geom::Vector3(
               (tri.vh.x() + tri.vm.x() + tri.vl.x()) / 3.0,
               (tri.vh.y() + tri.vm.y() + tri.vl.y()) / 3.0,
               (tri.vh.z() + tri.vm.z() + tri.vl.z()) / 3.0);
-          cgal::Vector3 r = centroid - coMVec;
-          cgal::Vector3 vHull =
-              linVelocity + CGAL::cross_product(angVelocity, r);
+          geom::Vector3 r = centroid - coMVec;
+          geom::Vector3 vHull =
+              linVelocity + geom::Cross(angVelocity, r);
 
           // Normal component of the hull velocity relative to the air.
-          cgal::Vector3 vRel = vHull - windVelocity;
-          double vn = CGAL::to_double(vRel * nHat);
+          geom::Vector3 vRel = vHull - windVelocity;
+          double vn = geom::ToDouble(vRel * nHat);
           if (vn <= 0.0) continue;  // lee side — no pressure
 
           // Aerodynamic force and torque on this face (pushes inward).
-          cgal::Vector3 f =
+          geom::Vector3 f =
               (-0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
-          cgal::Vector3 tau = CGAL::cross_product(r, f);
+          geom::Vector3 tau = geom::Cross(r, f);
 
-          fx += CGAL::to_double(f.x());
-          fy += CGAL::to_double(f.y());
-          fz += CGAL::to_double(f.z());
-          tx += CGAL::to_double(tau.x());
-          ty += CGAL::to_double(tau.y());
-          tz += CGAL::to_double(tau.z());
+          fx += geom::ToDouble(f.x());
+          fy += geom::ToDouble(f.y());
+          fz += geom::ToDouble(f.z());
+          tx += geom::ToDouble(tau.x());
+          ty += geom::ToDouble(tau.y());
+          tz += geom::ToDouble(tau.z());
         }
 
         gz::math::Vector3d aeroForceSum(fx, fy, fz);
@@ -1123,7 +1125,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
   EntityComponentManager& _ecm,
   sim::Model _model,
   std::vector<sim::Entity>& _links,
-  std::vector<std::vector<cgal::MeshPtr>>& _meshes,
+  std::vector<std::vector<geom::MeshPtr>>& _meshes,
   std::vector<std::vector<Entity>>& _collisions)
 {
   // There will be more than one mesh per link if the link contains
@@ -1145,7 +1147,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
 
     /// check link has valid name
     GZ_ASSERT(link.Name(_ecm).has_value(), "Link must be have valid name");
-    std::vector<std::shared_ptr<cgal::Mesh>> linkMeshes;
+    std::vector<std::shared_ptr<geom::Mesh>> linkMeshes;
     std::vector<Entity> linkCollisions;
 
     gzmsg << "Hydrodynamics: checking collision meshes for link ["
@@ -1203,7 +1205,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
           "Failed to create Mesh for Box");
 
         // Create the CGAL surface mesh
-        std::shared_ptr<cgal::Mesh> mesh = std::make_shared<cgal::Mesh>();
+        std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
           MeshByName(meshName), *mesh);
@@ -1214,7 +1216,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         gzmsg << "Type:       " << "BOX" << "\n";
         gzmsg << "Size:       " << box.Size() << "\n";
         gzmsg << "MeshName:   " << meshName << "\n";
-        gzmsg << "Vertex:     " << mesh->number_of_vertices() << "\n";
+        gzmsg << "Vertex:     " << geom::VertexCount(*mesh) << "\n";
         break;
       }
       case sdf::GeometryType::SPHERE:
@@ -1236,7 +1238,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
           "Failed to create Mesh for Sphere");
 
         // Create the CGAL surface mesh
-        std::shared_ptr<cgal::Mesh> mesh = std::make_shared<cgal::Mesh>();
+        std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
           MeshByName(meshName), *mesh);
@@ -1247,7 +1249,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         gzmsg << "Type:       " << "SPHERE" << "\n";
         gzmsg << "Radius:     " << sphere.Radius() << "\n";
         gzmsg << "MeshName:   " << meshName << "\n";
-        gzmsg << "Vertex:     " << mesh->number_of_vertices() << "\n";
+        gzmsg << "Vertex:     " << geom::VertexCount(*mesh) << "\n";
         break;
       }
       case sdf::GeometryType::CYLINDER:
@@ -1269,7 +1271,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
           "Failed to create Mesh for Cylinder");
 
         // Create the CGAL surface mesh
-        std::shared_ptr<cgal::Mesh> mesh = std::make_shared<cgal::Mesh>();
+        std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
           MeshByName(meshName), *mesh);
@@ -1281,7 +1283,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         gzmsg << "Radius:     " << cylinder.Radius() << "\n";
         gzmsg << "Length:     " << cylinder.Length() << "\n";
         gzmsg << "MeshName:   " << meshName << "\n";
-        gzmsg << "Vertex:     " << mesh->number_of_vertices() << "\n";
+        gzmsg << "Vertex:     " << geom::VertexCount(*mesh) << "\n";
         break;
       }
       case sdf::GeometryType::PLANE:
@@ -1318,7 +1320,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         }
 
         // Create the CGAL surface mesh
-        std::shared_ptr<cgal::Mesh> mesh = std::make_shared<cgal::Mesh>();
+        std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->Load(file), *mesh);
         GZ_ASSERT(mesh != nullptr, "Invalid Suface Mesh");
@@ -1329,7 +1331,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         gzmsg << "Uri:        " << uri << "\n";
         gzmsg << "FilePath:   " << filePath << "\n";
         gzmsg << "MeshFile:   " << file << "\n";
-        gzmsg << "Vertex:     " << mesh->number_of_vertices() << "\n";
+        gzmsg << "Vertex:     " << geom::VertexCount(*mesh) << "\n";
         break;
       }
       default:
@@ -1528,7 +1530,7 @@ void HydrodynamicsPrivate::UpdateWaterPatchMarkers()
       {
         for (waves::Index k = 0; k < 2; ++k)
         {
-          cgal::Triangle tri = grid.GetTriangle(ix, iy, k);
+          geom::Triangle tri = grid.GetTriangle(ix, iy, k);
           gz::msgs::Set(hd->waterPatchMsg.add_point(), waves::ToGz(tri[0]));
           gz::msgs::Set(hd->waterPatchMsg.add_point(), waves::ToGz(tri[1]));
           gz::msgs::Set(hd->waterPatchMsg.add_point(), waves::ToGz(tri[2]));
@@ -1795,7 +1797,7 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
     rot.Inverse() * hd->link.WorldLinearVelocity(_ecm).value();
 
   // Water current at CoM in world frame, rotated to body frame.
-  cgal::Vector3 wcWorld = hd->hydrodynamics.front()->GetWaterCurrentCoM();
+  geom::Vector3 wcWorld = hd->hydrodynamics.front()->GetWaterCurrentCoM();
   gz::math::Vector3d wcBody =
     rot.Inverse() * gz::math::Vector3d(wcWorld.x(), wcWorld.y(), wcWorld.z());
 
