@@ -315,40 +315,8 @@ else()
 endif()
 
 #--------------------------------------
-# Find FFTW3 (double-precision) (GPL) as FFT library.
-
-find_path(FFTW3-3_INCLUDE_DIR
-  NAMES fftw3.h
-  HINTS $ENV{FFTW3_DIR}/include
-  PATHS /usr/local/include
-        /usr/include
-)
-
-find_library(FFTW3-3_LIBRARY
-  NAMES fftw3 libfftw3
-  HINTS $ENV{FFTW3_DIR}/lib
-  PATHS /usr/local/lib
-        /usr/lib
-)
-
-find_library(FFTW3_OMP_LIBRARY
-  NAMES fftw3_omp libfftw3_omp
-  HINTS $ENV{FFTW3_DIR}/lib
-  PATHS /usr/local/lib
-        /usr/lib
-)
-
-add_definitions(-DUSE_FFTW3)
-set(FFT_INCLUDE_DIRS ${FFTW3-3_INCLUDE_DIR})
-set(FFT_LIBRARIES ${FFTW3-3_LIBRARY})
-
-if(FFTW3_OMP_LIBRARY)
-  list(APPEND FFT_LIBRARIES ${FFTW3_OMP_LIBRARY})
-  add_definitions(-DUSE_FFTW3_OMP)
-  message(STATUS "FFTW3 OpenMP threading enabled: ${FFTW3_OMP_LIBRARY}")
-else()
-  message(STATUS "FFTW3 OpenMP library (libfftw3_omp) not found — single-threaded FFT")
-endif()
+# FFT: PocketFFT (BSD-3-Clause), vendored header-only in thirdparty/pocketfft
+# and included privately by src/fft/Fft.cc. No external FFT library.
 
 #--------------------------------------
 # Find OpenCL

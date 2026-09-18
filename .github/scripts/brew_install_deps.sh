@@ -25,7 +25,6 @@ PKGS=(
   gz-harmonic
   eigen
   embree
-  fftw
 )
 
 # install packages

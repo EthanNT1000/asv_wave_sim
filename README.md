@@ -18,7 +18,7 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 
 - A working installation of [Gazebo Garden](https://gazebosim.org/docs/garden) or later including development symbols.
 
-- The simulation uses [Eigen](https://eigen.tuxfamily.org/) (MPL-2.0) for geometry, [Embree](https://www.embree.org/) (Apache-2.0) for ray / mesh intersection queries and [FFTW](http://www.fftw.org/) (GPL-3.0) to compute Fourier transforms. CGAL is no longer required (see `docs/cgal_audit.md`).
+- The simulation uses [Eigen](https://eigen.tuxfamily.org/) (MPL-2.0) for geometry, [Embree](https://www.embree.org/) (Apache-2.0) for ray / mesh intersection queries and a vendored copy of [PocketFFT](https://github.com/mreineck/pocketfft) (BSD-3-Clause, header-only, in `gz-waves/thirdparty/pocketfft`) to compute Fourier transforms. CGAL is no longer required (see `docs/cgal_audit.md`) and no FFT library needs to be installed.
 
 - [OpenMP](https://www.openmp.org/) is used to parallelise wave mesh updates, hydrodynamics force calculations, and FFT execution across multiple CPU cores.
 
@@ -29,11 +29,11 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 - Ubuntu 22.04 (Jammy)
 - Gazebo Sim, version 7.1.0 (Garden)
 
-Install Eigen, Embree and FFTW:
+Install Eigen and Embree:
 
 ```zsh
 sudo apt-get update
-sudo apt-get install libeigen3-dev libembree-dev libfftw3-dev
+sudo apt-get install libeigen3-dev libembree-dev
 ```
 
 ### OpenMP (Ubuntu)
@@ -51,25 +51,18 @@ If you are building with **Clang** instead of GCC, install the LLVM OpenMP runti
 sudo apt-get install libomp-dev
 ```
 
-To enable multi-threaded FFTW (optional but recommended for large wave grids), install the OpenMP-enabled FFTW variant:
-
-```bash
-sudo apt-get install libfftw3-dev
-# libfftw3-dev already includes the threaded library (libfftw3_omp)
-# verify with:
-ls /usr/lib/x86_64-linux-gnu/libfftw3_omp*
-```
+The Fourier transforms of the FFT wave model (PocketFFT) are multi-threaded with `std::thread` using the same thread budget as OpenMP (`OMP_NUM_THREADS`); no additional package is required.
 
 ## macOS
 
 - macOS 12.6 (Monterey)
 - Gazebo Sim, version 7.1.0 (Garden)
 
-Install Eigen, Embree and FFTW:
+Install Eigen and Embree:
 
 ```zsh
 brew update
-brew install eigen embree fftw
+brew install eigen embree
 ```
 
 ### OpenMP (macOS)

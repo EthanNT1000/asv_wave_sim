@@ -27,6 +27,7 @@ set(sources
   WaveSimulation.cc
   LinearRandomFFTWaveSimulation.cc
   LinearRandomFFTWaveSimulationRef.cc
+  fft/Fft.cc
   LinearRandomWaveSimulation.cc
   LinearRegularWaveSimulation.cc
   TrochoidIrregularWaveSimulation.cc
@@ -37,7 +38,7 @@ set(sources
 set(gtest_sources
   ${gtest_sources}
   Algorithm_TEST.cc
-  EigenFFTW_TEST.cc
+  Fft_TEST.cc
   Geometry_TEST.cc
   Grid_TEST.cc
   LinearRegularWaveSimulation_TEST.cc
@@ -62,7 +63,6 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     gz-common${GZ_COMMON_VER}::profiler
     gz-transport${GZ_TRANSPORT_VER}::gz-transport${GZ_TRANSPORT_VER}
     sdformat${SDF_VER}::sdformat${SDF_VER}
-    ${FFT_LIBRARIES}
   PRIVATE
     OpenMP::OpenMP_CXX
 )
@@ -80,6 +80,9 @@ target_include_directories(${PROJECT_LIBRARY_TARGET_NAME}
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   ${EIGEN3_INCLUDE_DIR}
+  PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/thirdparty/pocketfft
 )
 
 include_directories(${PROJECT_SOURCE_DIR}/test)
@@ -90,5 +93,4 @@ gz_build_tests(TYPE UNIT
     ${gtest_sources}
   LIB_DEPS
     ${PROJECT_LIBRARY_TARGET_NAME}
-    ${FFT_LIBRARIES}
 )

@@ -11,12 +11,11 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <!-- Geometry (Eigen, MPL-2.0), ray/mesh queries (Embree, Apache-2.0;
-       optional at build time via -DGZ_WAVES_WITH_EMBREE=OFF) and the FFT
-       library (FFTW, GPL). -->
+  <!-- Geometry (Eigen, MPL-2.0) and ray/mesh queries (Embree, Apache-2.0;
+       optional at build time via -DGZ_WAVES_WITH_EMBREE=OFF). The FFT is
+       PocketFFT, vendored header-only in thirdparty/pocketfft. -->
   <depend>eigen</depend>
   <depend>embree</depend>
-  <depend>libfftw3</depend>
 
   <!-- Gazebo. GZ_VERSION selects the Gazebo release the same way it does in
        CMakeLists.txt. When it is unset the vendor packages of the ROS
