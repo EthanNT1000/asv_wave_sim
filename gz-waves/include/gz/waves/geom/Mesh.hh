@@ -19,14 +19,13 @@
 /// gz-waves only ever treats a mesh as an indexed triangle soup: vertex
 /// i has a point, face f has three vertex indices, and indices are stable
 /// in 0..N-1 (no deletions). These functions are the only mesh access the
-/// library uses.
+/// library uses. Until Phase 4 the container is a CGAL Surface_mesh storing
+/// CGAL points; conversion to the Eigen point type happens here.
 
 #ifndef GZ_WAVES_GEOM_MESH_HH_
 #define GZ_WAVES_GEOM_MESH_HH_
 
 #include <array>
-
-#include <CGAL/Surface_mesh.h>
 
 #include "gz/waves/geom/Types.hh"
 
@@ -66,20 +65,21 @@ inline Index ToIndex(FaceIndex f)
   return static_cast<Index>(static_cast<Mesh::size_type>(f));
 }
 
-inline const Point3& VertexPoint(const Mesh& m, Index i)
+inline Point3 VertexPoint(const Mesh& m, Index i)
 {
-  return m.point(ToVertexIndex(i));
+  const detail::CgalPoint3& p = m.point(ToVertexIndex(i));
+  return Point3(p.x(), p.y(), p.z());
 }
 
 inline void SetVertexPoint(Mesh& m, Index i, const Point3& p)
 {
-  m.point(ToVertexIndex(i)) = p;
+  m.point(ToVertexIndex(i)) = detail::CgalPoint3(p.x(), p.y(), p.z());
 }
 
 /// \brief Append a vertex; returns its index.
 inline Index AddVertex(Mesh& m, const Point3& p)
 {
-  return ToIndex(m.add_vertex(p));
+  return ToIndex(m.add_vertex(detail::CgalPoint3(p.x(), p.y(), p.z())));
 }
 
 /// \brief Append a triangular face; returns its index.

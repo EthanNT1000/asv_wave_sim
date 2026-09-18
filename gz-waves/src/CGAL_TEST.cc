@@ -50,6 +50,7 @@
 #include <utility>
 #include <vector>
 
+#include "gz/waves/CGALTypes.hh"
 #include "gz/waves/Geometry.hh"
 #include "gz/waves/Grid.hh"
 #include "gz/waves/MeshTools.hh"

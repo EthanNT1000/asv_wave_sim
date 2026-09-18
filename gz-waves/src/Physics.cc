@@ -1373,8 +1373,8 @@ void Hydrodynamics::ComputeDampingForce()
   gz::math::Quaterniond R     = this->data->pose.Rot();
   gz::math::Quaterniond R_inv = R.Inverse();
 
-  gz::math::Vector3d linW = ToGz(this->data->linVelocity
-                                  - this->data->waterCurrentCoM);
+  gz::math::Vector3d linW = ToGz(geom::Vector3(this->data->linVelocity
+                                  - this->data->waterCurrentCoM));
   gz::math::Vector3d angW = ToGz(this->data->angVelocity);
 
   gz::math::Vector3d linB = R_inv.RotateVector(linW);

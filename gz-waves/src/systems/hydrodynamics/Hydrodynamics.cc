@@ -1011,7 +1011,7 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
           // Normal component of relative wind.
           geom::Vector3 vRel = windVelocity - vHull;
-          double vn = geom::ToDouble(vRel * nHat);
+          double vn = geom::Dot(vRel, nHat);
           if (vn <= 0.0) continue;  // lee side — no pressure
 
           // Aerodynamic force and torque on this face.
