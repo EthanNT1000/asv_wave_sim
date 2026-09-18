@@ -87,49 +87,53 @@ geom::Vector3 Geometry::Normalize(const geom::Vector3& _v)
     return _v/std::sqrt(geom::SquaredLength(_v));
 }
 
+namespace
+{
+/// \brief Unit normal of the triangle (p0, p1, p2), or the null vector if
+/// the points are degenerate.
+///
+/// A triangle is degenerate when geom::Collinear reports it: the cross
+/// product of its edge vectors is exactly zero (the CGAL Cartesian
+/// predicate on doubles). Near-degenerate triangles, whose edge vectors
+/// are almost but not exactly parallel, keep the normal of that cross
+/// product, as they did with CGAL. No tolerance is applied, so clipped
+/// sub-triangles are classified exactly as before.
+/// See https://github.com/srmainwaring/asv_wave_sim/issues/50.
+geom::Vector3 UnitNormalOrNull(
+  const geom::Point3& _p0,
+  const geom::Point3& _p1,
+  const geom::Point3& _p2)
+{
+  if (geom::Collinear(_p0, _p1, _p2))
+    return geom::NullVector();
+  auto n = geom::UnitlessNormal(_p0, _p1, _p2);
+  return n/std::sqrt(geom::SquaredLength(n));
+}
+}  // namespace
+
 geom::Vector3 Geometry::Normal(
   const geom::Point3& _p0,
   const geom::Point3& _p1,
   const geom::Point3& _p2
 )
 {
-  auto n = geom::UnitlessNormal(_p0, _p1, _p2);
-  if (n == geom::NullVector())
-    return n;
-  else
-    return n/std::sqrt(geom::SquaredLength(n));
+  return UnitNormalOrNull(_p0, _p1, _p2);
 }
 
 geom::Vector3 Geometry::Normal(
   const geom::Triangle& _tri
 )
 {
-  /// \todo improve handling of triangles containing collinear points
-  /// https://github.com/srmainwaring/asv_wave_sim/issues/50
-  if (geom::Collinear(_tri[0], _tri[1], _tri[2]))
-  {
-    return geom::NullVector();
-  }
-  auto n = geom::UnitlessNormal(_tri[0], _tri[1], _tri[2]);
-  if (n == geom::NullVector())
-    return n;
-  else
-    return n/std::sqrt(geom::SquaredLength(n));
+  return UnitNormalOrNull(_tri[0], _tri[1], _tri[2]);
 }
 
 geom::Vector3 Geometry::Normal(const geom::Mesh& _mesh, geom::FaceIndex _face)
 {
   const auto v = geom::FaceVertices(_mesh, geom::ToIndex(_face));
-  const geom::Point3& p0 = geom::VertexPoint(_mesh, v[0]);
-  const geom::Point3& p1 = geom::VertexPoint(_mesh, v[1]);
-  const geom::Point3& p2 = geom::VertexPoint(_mesh, v[2]);
-
-  auto n = geom::UnitlessNormal(p0, p1, p2);
-
-  if (n == geom::NullVector())
-    return n;
-  else
-    return n/std::sqrt(geom::SquaredLength(n));
+  return UnitNormalOrNull(
+      geom::VertexPoint(_mesh, v[0]),
+      geom::VertexPoint(_mesh, v[1]),
+      geom::VertexPoint(_mesh, v[2]));
 }
 
 geom::Point3 Geometry::HorizontalIntercept(
