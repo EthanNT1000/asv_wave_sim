@@ -17,6 +17,7 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -90,7 +91,8 @@ void WavefieldSampler::ApplyPose(const gz::math::Pose3d& pose)
   // Iterate over vertices
   auto& source = *impl_->init_patch_->GetMesh();
   auto& target = *impl_->patch_->GetMesh();
-  const Index n = std::min(geom::VertexCount(source), geom::VertexCount(target));
+  const Index n = std::min(
+      geom::VertexCount(source), geom::VertexCount(target));
   for (Index v = 0; v < n; ++v)
   {
     const geom::Point3& p0 = geom::VertexPoint(source, v);
