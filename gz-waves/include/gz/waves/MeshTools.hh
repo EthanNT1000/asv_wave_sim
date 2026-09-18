@@ -23,7 +23,7 @@
 #include <memory>
 #include <vector>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
 #include <gz/common/Mesh.hh>
 
@@ -54,7 +54,7 @@ class MeshTools
   /// \param[out] _target     The target mesg (a CGAL SurfaceMesh).
   static void MakeSurfaceMesh(
     const gz::common::Mesh& _source,
-    cgal::Mesh& _target);
+    geom::Mesh& _target);
 };
 
 }  // namespace waves

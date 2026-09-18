@@ -15,10 +15,6 @@
 
 #include "gz/waves/Grid.hh"
 
-#include <CGAL/number_utils.h>
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/Surface_mesh.h>
-
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -29,7 +25,7 @@
 
 #include <gz/common/Console.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/Geometry.hh"
 #include "gz/waves/Types.hh"
 
@@ -49,13 +45,13 @@ class GridPrivate
   std::array<Index, 2> cellCount;
 
   /// \brief The position of the grid center
-  cgal::Point3 center;
+  geom::Point3 center;
 
   /// \brief The grid mesh
-  std::shared_ptr<cgal::Mesh> mesh;
+  std::shared_ptr<geom::Mesh> mesh;
 
   /// \brief The grid normals (for each face)
-  std::vector<cgal::Vector3> normals;
+  std::vector<geom::Vector3> normals;
 };
 
 //////////////////////////////////////////////////
@@ -66,8 +62,8 @@ Grid::Grid(
 {
   this->data->size = _size;
   this->data->cellCount = _cellCount;
-  this->data->center = CGAL::ORIGIN;
-  this->data->mesh = std::make_shared<cgal::Mesh>();
+  this->data->center = geom::Origin();
+  this->data->mesh = std::make_shared<geom::Mesh>();
 
   // Grid dimensions
   const Index nx = this->data->cellCount[0];
@@ -87,7 +83,7 @@ Grid::Grid(
     for (Index ix=0; ix <= nx; ++ix)
     {
       double px = ix * lx - Lx/2.0;
-      mesh.add_vertex(cgal::Point3(px, py, 0));
+      geom::AddVertex(mesh, geom::Point3(px, py, 0));
     }
   }
 
@@ -102,25 +98,15 @@ Grid::Grid(
       const Index idx2 = (iy+1) * (nx+1) + ix + 1;
       const Index idx3 = (iy+1) * (nx+1) + ix;
 
-      // Vertex iterators
-      auto v0 = std::begin(mesh.vertices());
-      auto v1 = std::begin(mesh.vertices());
-      auto v2 = std::begin(mesh.vertices());
-      auto v3 = std::begin(mesh.vertices());
-      std::advance(v0, idx0);
-      std::advance(v1, idx1);
-      std::advance(v2, idx2);
-      std::advance(v3, idx3);
-
       // Faces
-      mesh.add_face(*v0, *v1, *v2);
-      mesh.add_face(*v0, *v2, *v3);
+      geom::AddFace(mesh, idx0, idx1, idx2);
+      geom::AddFace(mesh, idx0, idx2, idx3);
 
       // Face Normals
-      cgal::Point3 p0(mesh.point(*v0));
-      cgal::Point3 p1(mesh.point(*v1));
-      cgal::Point3 p2(mesh.point(*v2));
-      cgal::Point3 p3(mesh.point(*v3));
+      geom::Point3 p0(geom::VertexPoint(mesh, idx0));
+      geom::Point3 p1(geom::VertexPoint(mesh, idx1));
+      geom::Point3 p2(geom::VertexPoint(mesh, idx2));
+      geom::Point3 p3(geom::VertexPoint(mesh, idx3));
       normals.push_back(Geometry::Normal(p0, p1, p2));
       normals.push_back(Geometry::Normal(p0, p2, p3));
     }
@@ -133,7 +119,7 @@ Grid::Grid(const Grid& _other) :
 {
   this->data->size = _other.data->size;
   this->data->cellCount = _other.data->cellCount;
-  this->data->mesh.reset(new cgal::Mesh(*_other.data->mesh));
+  this->data->mesh.reset(new geom::Mesh(*_other.data->mesh));
 }
 
 //////////////////////////////////////////////////
@@ -146,24 +132,24 @@ Grid& Grid::operator=(const Grid& _other)
   // Copy
   this->data->size = _other.data->size;
   this->data->cellCount = _other.data->cellCount;
-  this->data->mesh.reset(new cgal::Mesh(*_other.data->mesh));
+  this->data->mesh.reset(new geom::Mesh(*_other.data->mesh));
   return *this;
 }
 
 //////////////////////////////////////////////////
-std::shared_ptr<const cgal::Mesh> Grid::GetMesh() const
+std::shared_ptr<const geom::Mesh> Grid::GetMesh() const
 {
   return this->data->mesh;
 }
 
 //////////////////////////////////////////////////
-std::shared_ptr<cgal::Mesh> Grid::GetMesh()
+std::shared_ptr<geom::Mesh> Grid::GetMesh()
 {
   return this->data->mesh;
 }
 
 //////////////////////////////////////////////////
-const cgal::Mesh& Grid::GetMeshByRef() const
+const geom::Mesh& Grid::GetMeshByRef() const
 {
   return *this->data->mesh;
 }
@@ -183,33 +169,29 @@ const std::array<Index, 2>& Grid::GetCellCount() const
 //////////////////////////////////////////////////
 Index Grid::GetVertexCount() const
 {
-  return this->data->mesh->number_of_vertices();
+  return geom::VertexCount(*this->data->mesh);
 }
 
 //////////////////////////////////////////////////
 Index Grid::GetFaceCount() const
 {
-  return this->data->mesh->number_of_faces();
+  return geom::FaceCount(*this->data->mesh);
 }
 
 //////////////////////////////////////////////////
-const cgal::Point3& Grid::GetPoint(Index _i) const
+const geom::Point3& Grid::GetPoint(Index _i) const
 {
-  auto vb = std::begin(this->data->mesh->vertices());
-  std::advance(vb, _i);
-  return this->data->mesh->point(*vb);
+  return geom::VertexPoint(*this->data->mesh, _i);
 }
 
 //////////////////////////////////////////////////
-void Grid::SetPoint(Index _i, const cgal::Point3& _v)
+void Grid::SetPoint(Index _i, const geom::Point3& _v)
 {
-  auto vb = std::begin(this->data->mesh->vertices());
-  std::advance(vb, _i);
-  this->data->mesh->point(*vb) = _v;
+  geom::SetVertexPoint(*this->data->mesh, _i, _v);
 }
 
 //////////////////////////////////////////////////
-cgal::Triangle Grid::GetTriangle(Index _ix, Index _iy, Index _k) const
+geom::Triangle Grid::GetTriangle(Index _ix, Index _iy, Index _k) const
 {
   // Original lookup using cell indexing - keep for index arithmetic
   // // Grid dimensions
@@ -225,13 +207,13 @@ cgal::Triangle Grid::GetTriangle(Index _ix, Index _iy, Index _k) const
   // switch (_k)
   // {
   // case 0:
-  //   return cgal::Triangle(
+  //   return geom::Triangle(
   //     this->GetPoint(idx0),
   //     this->GetPoint(idx1),
   //     this->GetPoint(idx2)
   //   );
   // case 1:
-  //   return cgal::Triangle(
+  //   return geom::Triangle(
   //     this->GetPoint(idx0),
   //     this->GetPoint(idx2),
   //     this->GetPoint(idx3)
@@ -245,29 +227,22 @@ cgal::Triangle Grid::GetTriangle(Index _ix, Index _iy, Index _k) const
   const Index nx = this->data->cellCount[0];
   const Index idx = 2 * (nx * _iy + _ix) + _k;
 
-  // Make triangle from face descriptor
-  auto& mesh = *this->data->mesh;
-  auto fb = std::begin(mesh.faces());
-  std::advance(fb, idx);
-  return Geometry::MakeTriangle(mesh, *fb);
+  // Make triangle from face index
+  return geom::FaceTriangle(*this->data->mesh, idx);
 }
 
 //////////////////////////////////////////////////
-cgal::FaceIndex Grid::GetFace(Index _ix, Index _iy, Index _k) const
+geom::FaceIndex Grid::GetFace(Index _ix, Index _iy, Index _k) const
 {
   // Face index
   const Index nx = this->data->cellCount[0];
   const Index idx = 2 * (nx * _iy + _ix) + _k;
 
-  // Make triangle from face descriptor
-  auto& mesh = *this->data->mesh;
-  auto fb = std::begin(mesh.faces());
-  std::advance(fb, idx);
-  return *fb;
+  return geom::ToFaceIndex(idx);
 }
 
 //////////////////////////////////////////////////
-const cgal::Vector3& Grid::GetNormal(Index _ix, Index _iy, Index _k) const
+const geom::Vector3& Grid::GetNormal(Index _ix, Index _iy, Index _k) const
 {
   // Face index
   const Index nx = this->data->cellCount[0];
@@ -277,7 +252,7 @@ const cgal::Vector3& Grid::GetNormal(Index _ix, Index _iy, Index _k) const
 }
 
 //////////////////////////////////////////////////
-const cgal::Vector3& Grid::GetNormal(Index _idx) const
+const geom::Vector3& Grid::GetNormal(Index _idx) const
 {
   return this->data->normals[_idx];
 }
@@ -286,22 +261,21 @@ const cgal::Vector3& Grid::GetNormal(Index _idx) const
 void Grid::RecalculateNormals()
 {
   auto& mesh = *this->data->mesh;
-  int64_t idx = 0;
-  for (auto&& face : mesh.faces())
+  const Index nFaces = geom::FaceCount(mesh);
+  for (Index idx = 0; idx < nFaces; ++idx)
   {
-    cgal::Vector3 normal = Geometry::Normal(mesh, face);
-    this->data->normals[idx++] = normal;
+    this->data->normals[idx] = Geometry::Normal(mesh, geom::ToFaceIndex(idx));
   }
 }
 
 //////////////////////////////////////////////////
-const cgal::Point3& Grid::GetCenter() const
+const geom::Point3& Grid::GetCenter() const
 {
   return this->data->center;
 }
 
 //////////////////////////////////////////////////
-void Grid::SetCenter(const cgal::Point3& _center)
+void Grid::SetCenter(const geom::Point3& _center)
 {
   this->data->center = _center;
 }
@@ -315,15 +289,17 @@ void Grid::DebugPrint() const
   gzmsg << "c0:  " << this->data->center << std::endl;
 
   gzmsg << "Vertices " << std::endl;
-  for (auto&& vertex : mesh.vertices())
+  const Index nVerts = geom::VertexCount(mesh);
+  for (Index v = 0; v < nVerts; ++v)
   {
-    gzmsg << vertex << ": " << mesh.point(vertex) << std::endl;
+    gzmsg << v << ": " << geom::VertexPoint(mesh, v) << std::endl;
   }
   gzmsg << "Faces " << std::endl;
-  for (auto&& face : mesh.faces())
+  const Index nFaces = geom::FaceCount(mesh);
+  for (Index f = 0; f < nFaces; ++f)
   {
-    cgal::Triangle tri = Geometry::MakeTriangle(mesh, face);
-    gzmsg << face << ": " << tri << std::endl;
+    geom::Triangle tri = geom::FaceTriangle(mesh, f);
+    gzmsg << f << ": " << tri << std::endl;
   }
 }
 
@@ -384,22 +360,19 @@ bool GridTools::FindIntersectionIndex(
 //////////////////////////////////////////////////
 bool GridTools::FindIntersectionTriangle(
   const Grid& _grid,
-  const cgal::Point3& _origin,
-  const cgal::Direction3& _direction,
+  const geom::Point3& _origin,
+  const geom::Direction3& _direction,
   const std::array<Index, 3>& _index,
-  cgal::Point3& _intersection)
+  geom::Point3& _intersection)
 {
   // FaceIndex version: the ByRef vs shared_ptr access makes
   // a difference (50% of this functions execution time!)
   const auto& mesh = _grid.GetMeshByRef();
   auto face = _grid.GetFace(_index[0], _index[1], _index[2]);
-  cgal::HalfedgeIndex hf = mesh.halfedge(face);
-  const cgal::Point3& p0 = mesh.point(mesh.target(hf));
-  hf = mesh.next(hf);
-  const cgal::Point3& p1 = mesh.point(mesh.target(hf));
-  hf = mesh.next(hf);
-  const cgal::Point3& p2 = mesh.point(mesh.target(hf));
-  hf = mesh.next(hf);
+  const auto v = geom::FaceVertices(mesh, geom::ToIndex(face));
+  const geom::Point3& p0 = geom::VertexPoint(mesh, v[0]);
+  const geom::Point3& p1 = geom::VertexPoint(mesh, v[1]);
+  const geom::Point3& p2 = geom::VertexPoint(mesh, v[2]);
 
   return Geometry::LineIntersectsTriangle(
     _origin, _direction, p0, p1, p2, _intersection);
@@ -408,10 +381,10 @@ bool GridTools::FindIntersectionTriangle(
 //////////////////////////////////////////////////
 bool GridTools::FindIntersectionCell(
   const Grid& _grid,
-  const cgal::Point3& _origin,
-  const cgal::Direction3& _direction,
+  const geom::Point3& _origin,
+  const geom::Direction3& _direction,
   std::array<Index, 3>& _index,
-  cgal::Point3& _intersection
+  geom::Point3& _intersection
 )
 {
   // Search each of the two triangles comprising each cell
@@ -431,10 +404,10 @@ bool GridTools::FindIntersectionCell(
 // otherwise the index arithmetic will be incorrect.
 bool GridTools::FindIntersectionGrid(
   const Grid& _grid,
-  const cgal::Point3& _origin,
-  const cgal::Direction3& _direction,
+  const geom::Point3& _origin,
+  const geom::Direction3& _direction,
   std::array<Index, 3>& _index,
-  cgal::Point3& _point
+  geom::Point3& _point
 )
 {
   // The flag 'isDone' is true if there are no remaining cells to search.

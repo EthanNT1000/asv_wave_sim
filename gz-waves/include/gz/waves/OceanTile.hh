@@ -22,7 +22,7 @@
 
 #include <gz/common/Mesh.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/Types.hh"
 #include "gz/waves/WaveParameters.hh"
 
@@ -89,7 +89,7 @@ typedef std::shared_ptr<OceanTile> OceanTilePtr;
 
 namespace physics
 {
-typedef OceanTileT<cgal::Point3>   OceanTile;
+typedef OceanTileT<geom::Point3>   OceanTile;
 typedef std::shared_ptr<OceanTile> OceanTilePtr;
 }  // namespace physics
 

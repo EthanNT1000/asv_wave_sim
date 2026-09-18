@@ -30,7 +30,7 @@
 #include <gz/math/Vector2.hh>
 #include <gz/math/Vector3.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/Grid.hh"
 #include "gz/waves/Utilities.hh"
 #include "gz/waves/Wavefield.hh"
@@ -83,27 +83,21 @@ void WavefieldSampler::ApplyPose(const gz::math::Pose3d& pose)
 {
   // @TODO_FRAGILE - Move to Grid as changing internal state
   // Apply pose to center
-  const cgal::Point3& c0 = impl_->init_patch_->GetCenter();
-  cgal::Point3 c1(c0.x() + pose.Pos().X(), c0.y() + pose.Pos().Y(), c0.z());
+  const geom::Point3& c0 = impl_->init_patch_->GetCenter();
+  geom::Point3 c1(c0.x() + pose.Pos().X(), c0.y() + pose.Pos().Y(), c0.z());
   impl_->patch_->SetCenter(c1);
 
   // Iterate over vertices
   auto& source = *impl_->init_patch_->GetMesh();
   auto& target = *impl_->patch_->GetMesh();
-  for (
-    auto&& it = std::make_pair(std::begin(source.vertices()),
-        std::begin(target.vertices()));
-    it.first != std::end(source.vertices()) &&
-        it.second != std::end(target.vertices());
-    ++it.first, ++it.second)
+  const Index n = std::min(geom::VertexCount(source), geom::VertexCount(target));
+  for (Index v = 0; v < n; ++v)
   {
-    const auto& v0 = *it.first;
-    const auto& v1 = *it.second;
-    const cgal::Point3& p0 = source.point(v0);
+    const geom::Point3& p0 = geom::VertexPoint(source, v);
 
     // Transformation: slide the patch in the xy - plane only
-    cgal::Point3 p1(p0.x() + pose.Pos().X(), p0.y() + pose.Pos().Y(), p0.z());
-    target.point(v1) = p1;
+    geom::Point3 p1(p0.x() + pose.Pos().X(), p0.y() + pose.Pos().Y(), p0.z());
+    geom::SetVertexPoint(target, v, p1);
   }
 }
 
@@ -112,26 +106,20 @@ void WavefieldSampler::UpdatePatch()
 {
   // Update the water patch Mesh
   // gzmsg << "Update water patch..." << std::endl;
-  const auto& target = impl_->patch_->GetMesh();
-  for (
-    auto&& vb = std::begin(target->vertices());
-    vb != std::end(target->vertices());
-    ++vb
-  )
+  auto& target = *impl_->patch_->GetMesh();
+  const Index n = geom::VertexCount(target);
+  for (Index v = 0; v < n; ++v)
   {
-    const auto& vertex = *vb;
-    const auto& p0 = target->point(vertex);
+    const geom::Point3 p0 = geom::VertexPoint(target, v);
     double height = 0.0;
     impl_->wavefield_->Height(
         Eigen::Vector3d(p0.x(), p0.y(), p0.z()), height);
-    cgal::Point3 p1(p0.x(), p0.y(), height);
-    target->point(vertex) = p1;
-    // gzmsg << target->point(vertex) << std::endl;
+    geom::SetVertexPoint(target, v, geom::Point3(p0.x(), p0.y(), height));
   }
 }
 
 //////////////////////////////////////////////////
-double WavefieldSampler::ComputeDepth(const cgal::Point3& point) const
+double WavefieldSampler::ComputeDepth(const geom::Point3& point) const
 {
   auto& grid = *impl_->patch_;
   return WavefieldSampler::ComputeDepth(grid, point);
@@ -144,12 +132,12 @@ double WavefieldSampler::ComputeDepth(const cgal::Point3& point) const
 //////////////////////////////////////////////////
 double WavefieldSampler::ComputeDepth(
   const Grid& patch,
-  const cgal::Point3& point
+  const geom::Point3& point
 )
 {
   // Calculate the depth
-  cgal::Direction3 direction(0, 0, 1);
-  cgal::Point3 wave_point = CGAL::ORIGIN;
+  geom::Direction3 direction(0, 0, 1);
+  geom::Point3 wave_point = geom::Origin();
   std::array<Index, 3> index;
   bool is_found = GridTools::FindIntersectionIndex(
     patch, point.x(), point.y(), index);
@@ -178,7 +166,7 @@ double WavefieldSampler::ComputeDepth(
 //////////////////////////////////////////////////
 double WavefieldSampler::ComputeDepthDirectly(
   const WaveParameters& wave_params,
-  const cgal::Point3& point,
+  const geom::Point3& point,
   double time
 )
 {
@@ -284,10 +272,10 @@ double WavefieldSampler::ComputeDepthDirectly(
   return h;
 }
 
-cgal::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
+geom::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
   double x, double y, double z, double t) const
 {
-  cgal::Vector3 v_orb = CGAL::NULL_VECTOR;
+  geom::Vector3 v_orb = geom::NullVector();
   // Set up parameter references
   const WaveParameters* params = impl_->wavefield_->GetParametersRaw();
 
@@ -306,7 +294,7 @@ cgal::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
     double depth_decay = std::exp(k * z);  // z < 0 below surface
 
     double u_horiz = a * omega * depth_decay * std::cos(phase);
-    v_orb = v_orb + cgal::Vector3(u_horiz * dx,
+    v_orb = v_orb + geom::Vector3(u_horiz * dx,
       u_horiz * dy,
       a * omega * depth_decay * std::sin(phase));
 

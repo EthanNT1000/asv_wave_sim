@@ -22,7 +22,7 @@
 
 #include <gz/math/Pose3.hh>
 
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
 
 namespace gz
@@ -67,14 +67,14 @@ class WavefieldSampler
   ///
   /// \param[in] point       The point at which we want the depth
   /// \return                The depth 'h' at the point.
-  double ComputeDepth(const cgal::Point3& point) const;
+  double ComputeDepth(const geom::Point3& point) const;
 
   /// \brief Compute the depth at a point.
   ///
   /// \param[in] patch       A water patch.
   /// \param[in] point       The point at which we want the depth
   /// \return                The depth 'h' at the point.
-  static double ComputeDepth(const Grid& patch, const cgal::Point3& point);
+  static double ComputeDepth(const Grid& patch, const geom::Point3& point);
 
   /// \brief Compute the depth at a point directly (no sampling).
   ///
@@ -92,10 +92,10 @@ class WavefieldSampler
   /// \return                 The depth 'h' at the point.
   static double ComputeDepthDirectly(
     const WaveParameters& wave_params,
-    const cgal::Point3& point,
+    const geom::Point3& point,
     double time);
 
-  cgal::Vector3 ComputeOrbitalVelocity(
+  geom::Vector3 ComputeOrbitalVelocity(
     double x, double y, double z, double t) const;
 
  private:

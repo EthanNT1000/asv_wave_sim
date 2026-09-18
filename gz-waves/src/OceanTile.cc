@@ -57,7 +57,7 @@ namespace vector
   gz::math::Vector3d Zero<gz::math::Vector3d> = gz::math::Vector3d::Zero;
 
   template <>
-  cgal::Point3 Zero<cgal::Point3> = cgal::Point3(0.0, 0.0, 0.0);
+  geom::Point3 Zero<geom::Point3> = geom::Point3(0.0, 0.0, 0.0);
 }  // namespace vector
 
 //////////////////////////////////////////////////
@@ -514,11 +514,11 @@ void OceanTilePrivate<gz::math::Vector3d>::ComputeNormals()
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::ComputeNormals()
+void OceanTilePrivate<geom::Point3>::ComputeNormals()
 {
   // Not used
   gzerr << "No implementation"
-      << " of OceanTilePrivate<cgal::Point3>::ComputeNormals\n";
+      << " of OceanTilePrivate<geom::Point3>::ComputeNormals\n";
 }
 
 //////////////////////////////////////////////////
@@ -582,20 +582,20 @@ void OceanTilePrivate<gz::math::Vector3d>::ComputeTBN(
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::ComputeTBN(
-    const cgal::Point3& /*p0*/,
-    const cgal::Point3& /*p1*/,
-    const cgal::Point3& /*p2*/,
+void OceanTilePrivate<geom::Point3>::ComputeTBN(
+    const geom::Point3& /*p0*/,
+    const geom::Point3& /*p1*/,
+    const geom::Point3& /*p2*/,
     const gz::math::Vector2d& /*uv0*/,
     const gz::math::Vector2d& /*uv1*/,
     const gz::math::Vector2d& /*uv2*/,
-    cgal::Point3& /*tangent*/,
-    cgal::Point3& /*bitangent*/,
-    cgal::Point3& /*normal*/)
+    geom::Point3& /*tangent*/,
+    geom::Point3& /*bitangent*/,
+    geom::Point3& /*normal*/)
 {
   // Not used
   gzerr << "No implementation"
-      << " of OceanTilePrivate<cgal::Point3>::ComputeTBN\n";
+      << " of OceanTilePrivate<geom::Point3>::ComputeTBN\n";
 }
 
 //////////////////////////////////////////////////
@@ -657,17 +657,17 @@ void OceanTilePrivate<gz::math::Vector3d>::ComputeTBN(
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::ComputeTBN(
-    const std::vector<cgal::Point3> & /*vertices*/,
+void OceanTilePrivate<geom::Point3>::ComputeTBN(
+    const std::vector<geom::Point3> & /*vertices*/,
     const std::vector<gz::math::Vector2d>& /*tex_coords*/,
     const std::vector<gz::math::Vector3i>& /*faces*/,
-    std::vector<cgal::Point3>& /*tangents*/,
-    std::vector<cgal::Point3>& /*bitangents*/,
-    std::vector<cgal::Point3>& /*normals*/)
+    std::vector<geom::Point3>& /*tangents*/,
+    std::vector<geom::Point3>& /*bitangents*/,
+    std::vector<geom::Point3>& /*normals*/)
 {
   // Not used
   gzerr << "No implementation "
-      << " of OceanTilePrivate<cgal::Point3>::ComputeTBN\n";
+      << " of OceanTilePrivate<geom::Point3>::ComputeTBN\n";
 }
 
 //////////////////////////////////////////////////
@@ -704,7 +704,7 @@ void OceanTilePrivate<gz::math::Vector3d>::UpdateVertex(
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::UpdateVertex(Index v_idx, Index w_idx)
+void OceanTilePrivate<geom::Point3>::UpdateVertex(Index v_idx, Index w_idx)
 {
   // 1. Update vertex
   double h  = heights_[w_idx];
@@ -712,7 +712,7 @@ void OceanTilePrivate<cgal::Point3>::UpdateVertex(Index v_idx, Index w_idx)
   double sy = sy_[w_idx];
 
   auto&& v0 = vertices0_[v_idx];
-  vertices_[v_idx] = cgal::Point3(
+  vertices_[v_idx] = geom::Point3(
     v0.x() + sy,
     v0.y() + sx,
     v0.z() + h);
@@ -768,7 +768,7 @@ void OceanTilePrivate<gz::math::Vector3d>::UpdateVertexAndTangents(
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::UpdateVertexAndTangents(
+void OceanTilePrivate<geom::Point3>::UpdateVertexAndTangents(
     Index v_idx, Index w_idx)
 {
   // 1. Update vertex
@@ -786,12 +786,12 @@ void OceanTilePrivate<cgal::Point3>::UpdateVertexAndTangents(
   double dsydy = dsydy_[w_idx];
   double dsxdy = dsxdy_[w_idx];
 
-  tangents_[v_idx] = cgal::Point3(
+  tangents_[v_idx] = geom::Point3(
     dsydy + 1.0,
     dsxdy,
     dhdy);
 
-  bitangents_[v_idx] = cgal::Point3(
+  bitangents_[v_idx] = geom::Point3(
     dsxdy,
     dsxdx + 1.0,
     dhdx);
@@ -992,7 +992,7 @@ void OceanTilePrivate<gz::math::Vector3d>::UpdateMesh(
 
 //////////////////////////////////////////////////
 template <>
-void OceanTilePrivate<cgal::Point3>::UpdateMesh(
+void OceanTilePrivate<geom::Point3>::UpdateMesh(
     double /*time*/, gz::common::Mesh* /*mesh*/)
 {
   /// \note This template specialisation is supplied for compilation on
@@ -1130,125 +1130,125 @@ OceanTileT<gz::math::Vector3d>::Vertices() const
 }
 
 //////////////////////////////////////////////////
-// Specialisation for cgal::Point3
+// Specialisation for geom::Point3
 //////////////////////////////////////////////////
 template <>
-OceanTileT<cgal::Point3>::~OceanTileT()
+OceanTileT<geom::Point3>::~OceanTileT()
 {
 }
 
 //////////////////////////////////////////////////
 template <>
-OceanTileT<cgal::Point3>::OceanTileT(
+OceanTileT<geom::Point3>::OceanTileT(
     Index nx, Index ny, double lx, double ly, bool has_visuals) :
-    impl_(std::make_unique<OceanTilePrivate<cgal::Point3>>(
+    impl_(std::make_unique<OceanTilePrivate<geom::Point3>>(
         nx, ny, lx, ly, has_visuals))
 {
 }
 
 //////////////////////////////////////////////////
 template <>
-OceanTileT<cgal::Point3>::OceanTileT(
+OceanTileT<geom::Point3>::OceanTileT(
     WaveParametersPtr params, bool has_visuals) :
-    impl_(std::make_unique<OceanTilePrivate<cgal::Point3>>(
+    impl_(std::make_unique<OceanTilePrivate<geom::Point3>>(
         params, has_visuals))
 {
 }
 
 //////////////////////////////////////////////////
 template <>
-void OceanTileT<cgal::Point3>::SetWindVelocity(double ux, double uy)
+void OceanTileT<geom::Point3>::SetWindVelocity(double ux, double uy)
 {
   impl_->SetWindVelocity(ux, uy);
 }
 
 //////////////////////////////////////////////////
 template <>
-void OceanTileT<cgal::Point3>::SetSteepness(double value)
+void OceanTileT<geom::Point3>::SetSteepness(double value)
 {
   impl_->SetSteepness(value);
 }
 
 //////////////////////////////////////////////////
 template <>
-std::array<double, 2> OceanTileT<cgal::Point3>::TileSize() const
+std::array<double, 2> OceanTileT<geom::Point3>::TileSize() const
 {
   return {impl_->lx_, impl_->ly_};
 }
 
 //////////////////////////////////////////////////
 template <>
-std::array<Index, 2> OceanTileT<cgal::Point3>::CellCount() const
+std::array<Index, 2> OceanTileT<geom::Point3>::CellCount() const
 {
   return {impl_->nx_, impl_->ny_};
 }
 
 //////////////////////////////////////////////////
 template <>
-void OceanTileT<cgal::Point3>::Create()
+void OceanTileT<geom::Point3>::Create()
 {
   return impl_->Create();
 }
 
 //////////////////////////////////////////////////
 template <>
-gz::common::Mesh* OceanTileT<cgal::Point3>::CreateMesh()
+gz::common::Mesh* OceanTileT<geom::Point3>::CreateMesh()
 {
   return impl_->CreateMesh();
 }
 
 //////////////////////////////////////////////////
 template <>
-void OceanTileT<cgal::Point3>::Update(double time)
+void OceanTileT<geom::Point3>::Update(double time)
 {
   impl_->Update(time);
 }
 
 //////////////////////////////////////////////////
 template <>
-void OceanTileT<cgal::Point3>::UpdateMesh(double time, gz::common::Mesh* mesh)
+void OceanTileT<geom::Point3>::UpdateMesh(double time, gz::common::Mesh* mesh)
 {
   impl_->UpdateMesh(time, mesh);
 }
 
 //////////////////////////////////////////////////
 template <>
-Index OceanTileT<cgal::Point3>::VertexCount() const
+Index OceanTileT<geom::Point3>::VertexCount() const
 {
   return impl_->vertices_.size();
 }
 
 //////////////////////////////////////////////////
 template <>
-cgal::Point3 OceanTileT<cgal::Point3>::Vertex(Index index) const
+geom::Point3 OceanTileT<geom::Point3>::Vertex(Index index) const
 {
   return impl_->vertices_[index];
 }
 
 //////////////////////////////////////////////////
 template <>
-gz::math::Vector2d OceanTileT<cgal::Point3>::UV0(Index index) const
+gz::math::Vector2d OceanTileT<geom::Point3>::UV0(Index index) const
 {
   return impl_->tex_coords_[index];
 }
 
 //////////////////////////////////////////////////
 template <>
-Index OceanTileT<cgal::Point3>::FaceCount() const
+Index OceanTileT<geom::Point3>::FaceCount() const
 {
   return impl_->faces_.size();
 }
 
 //////////////////////////////////////////////////
 template <>
-gz::math::Vector3i OceanTileT<cgal::Point3>::Face(Index index) const
+gz::math::Vector3i OceanTileT<geom::Point3>::Face(Index index) const
 {
   return impl_->faces_[index];
 }
 
 //////////////////////////////////////////////////
 template <>
-const std::vector<cgal::Point3>& OceanTileT<cgal::Point3>::Vertices() const
+const std::vector<geom::Point3>& OceanTileT<geom::Point3>::Vertices() const
 {
   return impl_->vertices_;
 }

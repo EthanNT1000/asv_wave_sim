@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
 namespace gz::waves {
 
@@ -22,7 +22,7 @@ public:
 
     /// Bilinear interpolation of water current velocity at world position (x, y).
     /// Returns (0,0,0) if (x,y) is outside the grid extent.
-    gz::cgal::Vector3 SampleAt(double x, double y) const;
+    gz::waves::geom::Vector3 SampleAt(double x, double y) const;
 
     /// Grid extents in local frame (for debugging / visualisation).
     double XMin() const { return x_min_; }
