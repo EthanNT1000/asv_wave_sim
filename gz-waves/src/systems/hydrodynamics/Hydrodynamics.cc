@@ -756,14 +756,17 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
     gzmsg << "Hydrodynamics: link world CoM pose: " << linkCoMPose << "\n";
 
     // RigidBody - the pose of the CoM is required for the dynamics.
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1).
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    cgal::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     cgal::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    cgal::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGPose is currently not available
-    // cgal::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVelocity(_ecm).value());
-    // cgal::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // First pass - store collisions and create bounding box
     auto bbox = math::AxisAlignedBox();
@@ -904,14 +907,17 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
     // RigidBody - the pose of the CoM is required for the dynamics.
     /// \todo check the components are available and valid
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1). This also feeds the aerodynamic pass below.
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    cgal::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     cgal::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    cgal::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGLinearVel is currently not available
-    // cgal::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVel(_ecm).value());
-    // cgal::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // Meshes
     // waves::Index nSubTri = 0;
