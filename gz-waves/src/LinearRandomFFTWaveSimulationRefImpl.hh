@@ -18,11 +18,12 @@
 
 #include <Eigen/Dense>
 
-#include <fftw3.h>
+#include <memory>
 
 #include <complex>
 
 #include "gz/waves/WaveSimulation.hh"
+#include "fft/Fft.hh"
 #include "LinearRandomFFTWaveSimulationRef.hh"
 
 namespace Eigen
@@ -42,8 +43,8 @@ namespace waves
 //////////////////////////////////////////////////
 // LinearRandomFFTWaveSimulationRef::Impl
 
-typedef double fftw_data_type;
-typedef std::complex<fftw_data_type> complex;
+typedef double fft_data_type;
+typedef std::complex<fft_data_type> complex;
 
 /// \brief Implementation of a FFT based wave simulation model
 ///
@@ -103,14 +104,11 @@ class LinearRandomFFTWaveSimulationRef::Impl
   void InitFFTCoeffStorage();
   void InitWaveNumbers();
 
-  void CreateFFTWPlans();
-  void DestroyFFTWPlans();
+  void CreateFFTPlans();
 
-  /// \note FFTW expects the multi-dimensional arrays to be in row-major
-  ///       format. Eigen::ArrayXXcd is column-major, so here we
-  ///       explicity set the storage type.
-  ///
-  /// https://www.fftw.org/fftw3_doc/Row_002dmajor-Format.html
+  /// \note The fft:: transforms expect the multi-dimensional arrays to be
+  ///       in row-major format. Eigen::ArrayXXcd is column-major, so here
+  ///       we explicity set the storage type.
   ///
   Eigen::ArrayXXcdRowMajor fft_h_;       // FFT0 - height
   Eigen::ArrayXXcdRowMajor fft_h_ikx_;   // FFT1 - d height / dx
@@ -130,8 +128,8 @@ class LinearRandomFFTWaveSimulationRef::Impl
   Eigen::ArrayXXcdRowMajor fft_out6_;
   Eigen::ArrayXXcdRowMajor fft_out7_;
 
-  fftw_plan fft_plan0_, fft_plan1_, fft_plan2_, fft_plan3_;
-  fftw_plan fft_plan4_, fft_plan5_, fft_plan6_, fft_plan7_;
+  std::unique_ptr<fft::BackwardC2C> fft_plan0_, fft_plan1_, fft_plan2_,
+      fft_plan3_, fft_plan4_, fft_plan5_, fft_plan6_, fft_plan7_;
 
   /// \brief Gravity acceleration [m/s^2]
   double gravity_{9.81};

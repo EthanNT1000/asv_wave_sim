@@ -18,13 +18,13 @@
 
 #include <Eigen/Dense>
 
-#include <fftw3.h>
-
 #include <complex>
+#include <memory>
 #include <vector>
 
 #include "gz/waves/WaveSimulation.hh"
 #include "gz/waves/LinearRandomFFTWaveSimulation.hh"
+#include "fft/Fft.hh"
 
 namespace Eigen
 {
@@ -50,8 +50,8 @@ namespace waves
 //////////////////////////////////////////////////
 // LinearRandomFFTWaveSimulation::Impl
 
-typedef double fftw_data_type;
-typedef std::complex<fftw_data_type> complex;
+typedef double fft_data_type;
+typedef std::complex<fft_data_type> complex;
 
 /// \brief Implementation of a FFT based wave simulation model
 ///
@@ -130,14 +130,17 @@ class LinearRandomFFTWaveSimulation::Impl
   void InitWaveNumbers();
   void InitPressureGrid();
 
-  void CreateFFTWPlans();
-  void DestroyFFTWPlans();
+  void CreateFFTPlans();
 
-  /// \note FFTW expects the multi-dimensional arrays to be in row-major
-  ///       format. Eigen::ArrayXXcd is column-major, so here we
-  ///       explicity set the storage type.
-  ///
-  /// https://www.fftw.org/fftw3_doc/Row_002dmajor-Format.html
+  /// \brief Run the eight per-step transforms (elevation, derivatives,
+  /// displacements, displacement derivatives) that are still pending,
+  /// concurrently, one transform per thread. Each accessor still checks
+  /// its own flag, so calling this first is an optimisation only.
+  void ExecutePending();
+
+  /// \note The fft:: transforms expect the multi-dimensional arrays to be
+  ///       in row-major format. Eigen::ArrayXXcd is column-major, so here
+  ///       we explicity set the storage type.
   ///
   Eigen::ArrayXXcdRowMajor fft_h_;       // FFT0 - height
   Eigen::ArrayXXcdRowMajor fft_h_ikx_;   // FFT1 - d height / dx
@@ -148,8 +151,8 @@ class LinearRandomFFTWaveSimulation::Impl
   Eigen::ArrayXXcdRowMajor fft_h_kyky_;  // FFT6 - d displacement y / dy
   Eigen::ArrayXXcdRowMajor fft_h_kxky_;  // FFT7 - d displacement x / dy
 
-  /// \note if using fftw_plan_dft_c2r_2d:
-  ///       complex input array has size: nx * ny / 2 + 1
+  /// \note complex-to-real transform:
+  ///       complex input array has size: nx * (ny / 2 + 1)
   ///       real output array has size:   nx * ny
   ///
   Eigen::ArrayXXdRowMajor  fft_out0_;
@@ -161,16 +164,17 @@ class LinearRandomFFTWaveSimulation::Impl
   Eigen::ArrayXXdRowMajor  fft_out6_;
   Eigen::ArrayXXdRowMajor  fft_out7_;
 
-  fftw_plan fft_plan0_, fft_plan1_, fft_plan2_, fft_plan3_;
-  fftw_plan fft_plan4_, fft_plan5_, fft_plan6_, fft_plan7_;
+  std::unique_ptr<fft::BackwardC2R> fft_plan0_, fft_plan1_, fft_plan2_,
+      fft_plan3_, fft_plan4_, fft_plan5_, fft_plan6_, fft_plan7_;
 
   /// FFT storage and plans for pressure calculations
   std::vector<Eigen::ArrayXXcdRowMajor>   fft_in_p_;
   std::vector<Eigen::ArrayXXdRowMajor>    fft_out_p_;
-  std::vector<fftw_plan>                  fft_plan_p_;
+  std::vector<std::unique_ptr<fft::BackwardC2R>> fft_plan_p_;
 
-  /// \brief lazy evaluation flags
-  std::vector<bool> fft_needs_update_;
+  /// \brief lazy evaluation flags (int, not bool: written per element
+  /// from parallel threads in ExecutePending)
+  std::vector<int> fft_needs_update_;
 
   /// \brief Gravity acceleration [m/s^2]
   double gravity_{9.81};

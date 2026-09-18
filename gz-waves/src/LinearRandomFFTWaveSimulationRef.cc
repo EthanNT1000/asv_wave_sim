@@ -32,7 +32,7 @@
 
 #include <Eigen/Dense>
 
-#include <fftw3.h>
+#include <memory>
 
 #include <complex>
 #include <random>
@@ -47,10 +47,7 @@ namespace gz
 namespace waves
 {
   //////////////////////////////////////////////////
-  LinearRandomFFTWaveSimulationRef::Impl::~Impl()
-  {
-    DestroyFFTWPlans();
-  }
+  LinearRandomFFTWaveSimulationRef::Impl::~Impl() = default;
 
   //////////////////////////////////////////////////
   LinearRandomFFTWaveSimulationRef::Impl::Impl(
@@ -62,7 +59,7 @@ namespace waves
     ny_(ny)
   {
     ComputeBaseAmplitudes();
-    CreateFFTWPlans();
+    CreateFFTPlans();
   }
 
   //////////////////////////////////////////////////
@@ -100,7 +97,7 @@ namespace waves
     Eigen::Ref<Eigen::ArrayXXd> h)
   {
     // run the FFT
-    fftw_execute(fft_plan0_);
+    fft_plan0_->Execute();
 
     // change from row to column major storage
     Index n2 = nx_ * ny_;
@@ -113,8 +110,8 @@ namespace waves
     Eigen::Ref<Eigen::ArrayXXd> dhdy)
   {
     // run the FFTs
-    fftw_execute(fft_plan1_);
-    fftw_execute(fft_plan2_);
+    fft_plan1_->Execute();
+    fft_plan2_->Execute();
 
     // change from row to column major storage
     Index n2 = nx_ * ny_;
@@ -128,8 +125,8 @@ namespace waves
     Eigen::Ref<Eigen::ArrayXXd> sy)
   {
     // run the FFTs
-    fftw_execute(fft_plan3_);
-    fftw_execute(fft_plan4_);
+    fft_plan3_->Execute();
+    fft_plan4_->Execute();
 
     // change from row to column major storage
     Index n2 = nx_ * ny_;
@@ -144,9 +141,9 @@ namespace waves
     Eigen::Ref<Eigen::ArrayXXd> dsxdy)
   {
     // run the FFTs
-    fftw_execute(fft_plan5_);
-    fftw_execute(fft_plan6_);
-    fftw_execute(fft_plan7_);
+    fft_plan5_->Execute();
+    fft_plan6_->Execute();
+    fft_plan7_->Execute();
 
     // change from row to column major storage
     Index n2 = nx_ * ny_;
@@ -543,8 +540,10 @@ namespace waves
   }
 
   //////////////////////////////////////////////////
-  void LinearRandomFFTWaveSimulationRef::Impl::CreateFFTWPlans()
+  void LinearRandomFFTWaveSimulationRef::Impl::CreateFFTPlans()
   {
+    const fft::Shape shape{nx_, ny_};
+
     // elevation
     fft_out0_ = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_);
     fft_out1_ = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_);
@@ -557,54 +556,24 @@ namespace waves
     fft_out6_ = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_);
     fft_out7_ = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_);
 
+    auto plan = [&shape](const Eigen::ArrayXXcdRowMajor& in,
+        Eigen::ArrayXXcdRowMajor& out)
+    {
+      return std::make_unique<fft::BackwardC2C>(
+          shape, in.data(), out.data());
+    };
+
     // elevation
-    fft_plan0_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out0_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan1_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_ikx_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out1_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan2_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_iky_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out2_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
+    fft_plan0_ = plan(fft_h_, fft_out0_);
+    fft_plan1_ = plan(fft_h_ikx_, fft_out1_);
+    fft_plan2_ = plan(fft_h_iky_, fft_out2_);
 
     // xy-displacements
-    fft_plan3_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_sx_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out3_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan4_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_sy_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out4_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan5_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_kxkx_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out5_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan6_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_kyky_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out6_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-    fft_plan7_ = fftw_plan_dft_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_h_kxky_.data()),
-        reinterpret_cast<fftw_complex*>(fft_out7_.data()),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
-  }
-
-  //////////////////////////////////////////////////
-  void LinearRandomFFTWaveSimulationRef::Impl::DestroyFFTWPlans()
-  {
-    fftw_destroy_plan(fft_plan0_);
-    fftw_destroy_plan(fft_plan1_);
-    fftw_destroy_plan(fft_plan2_);
-    fftw_destroy_plan(fft_plan3_);
-    fftw_destroy_plan(fft_plan4_);
-    fftw_destroy_plan(fft_plan5_);
-    fftw_destroy_plan(fft_plan6_);
-    fftw_destroy_plan(fft_plan7_);
+    fft_plan3_ = plan(fft_sx_, fft_out3_);
+    fft_plan4_ = plan(fft_sy_, fft_out4_);
+    fft_plan5_ = plan(fft_h_kxkx_, fft_out5_);
+    fft_plan6_ = plan(fft_h_kyky_, fft_out6_);
+    fft_plan7_ = plan(fft_h_kxky_, fft_out7_);
   }
 
   //////////////////////////////////////////////////
