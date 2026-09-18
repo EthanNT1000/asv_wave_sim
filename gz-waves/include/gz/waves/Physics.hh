@@ -332,7 +332,7 @@ class TriangleProperties
 
 class SubmergedTriangleProperties
 {
-public:
+ public:
   SubmergedTriangleProperties() :
     index(0),
     normal(geom::NullVector()),
@@ -439,7 +439,8 @@ class Hydrodynamics
 
   const std::vector<TriangleProperties>& GetTriangleProperties() const;
 
-  const std::vector<SubmergedTriangleProperties>& GetSubmergedTriangleProperties() const;
+  const std::vector<SubmergedTriangleProperties>&
+      GetSubmergedTriangleProperties() const;
 
   const gz::waves::geom::Vector3 GetWaterCurrentCoM() const;
 
@@ -534,7 +535,8 @@ class Hydrodynamics
   /// internal
   /// \brief Buoyancy force for one submerged triangle.
   /// Returns {force, torque} contribution to accumulate.
-  /// Also writes the buoyancy force and center-of-pressure to bForce_out / bCenter_out.
+  /// Also writes the buoyancy force and center-of-pressure to
+  /// bForce_out / bCenter_out.
   static std::pair<geom::Vector3, geom::Vector3> ComputeBuoyancyForce(
       const WavefieldSampler& wavefieldSampler,
       const geom::Triangle& subTri,
