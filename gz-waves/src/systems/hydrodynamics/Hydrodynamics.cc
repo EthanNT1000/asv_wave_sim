@@ -109,7 +109,8 @@ void ApplyPose(
     const geom::Point3& p0 = geom::VertexPoint(_source, i);
     gz::math::Vector3d gzP1 =
         rot.RotateVector({p0.x(), p0.y(), p0.z()}) + pos;
-    geom::SetVertexPoint(_target, i, geom::Point3(gzP1.X(), gzP1.Y(), gzP1.Z()));
+    geom::SetVertexPoint(_target, i,
+        geom::Point3(gzP1.X(), gzP1.Y(), gzP1.Z()));
   }
 }
 
@@ -1016,7 +1017,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
           if (vn <= 0.0) continue;  // lee side — no pressure
 
           // Aerodynamic force and torque on this face.
-          geom::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+          geom::Vector3 f =
+              (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
           geom::Vector3 tau = geom::Cross(r, f);
 
           fx += geom::ToDouble(f.x());
@@ -1618,6 +1620,11 @@ void HydrodynamicsPrivate::DeleteUnderwaterSurfaceMarkers()
 //////////////////////////////////////////////////
 void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm) {
+  // Influx line protocol cannot carry NaN; write 0.0 instead.
+  auto nanToZero = [](double v) -> std::string {
+    return std::isnan(v) ? std::string("0.0") : std::to_string(v);
+  };
+
   double currentTime = std::chrono::duration<double>(_info.simTime).count();
   if ((currentTime - this->influxPrevTime) < (1.0 / this->influxDBUpdateRate))
   {
@@ -1643,7 +1650,7 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",normal_y=" + std::to_string(prop.normal.y()) +
           ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
-          ",submerged_area=" + (std::isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
+          ",submerged_area=" + nanToZero(prop.subArea) +
           ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
@@ -1654,38 +1661,38 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
         std::string line = influxDBMeasurement + "_submerged_triangle,link=" +
           _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data() +
           ",index=" + std::to_string(index++) +
-          " normal_x=" + (std::isnan(subProp.normal.x()) ? "0.0" : std::to_string(subProp.normal.x())) +
-          ",normal_y=" + (std::isnan(subProp.normal.y()) ? "0.0" : std::to_string(subProp.normal.y())) +
-          ",normal_z=" + (std::isnan(subProp.normal.z()) ? "0.0" : std::to_string(subProp.normal.z())) +
-          ",centroid_x=" + (std::isnan(subProp.centroid.x()) ? "0.0" : std::to_string(subProp.centroid.x())) +
-          ",centroid_y=" + (std::isnan(subProp.centroid.y()) ? "0.0" : std::to_string(subProp.centroid.y())) +
-          ",centroid_z=" + (std::isnan(subProp.centroid.z()) ? "0.0" : std::to_string(subProp.centroid.z())) +
-          ",xr_x=" + (std::isnan(subProp.xr.x()) ? "0.0" : std::to_string(subProp.xr.x())) +
-          ",xr_y=" + (std::isnan(subProp.xr.y()) ? "0.0" : std::to_string(subProp.xr.y())) +
-          ",xr_z=" + (std::isnan(subProp.xr.z()) ? "0.0" : std::to_string(subProp.xr.z())) +
-          ",area=" + (std::isnan(subProp.area) ? "0.0" : std::to_string(subProp.area)) +
-          ",vp_x=" + (std::isnan(subProp.vp.x()) ? "0.0" : std::to_string(subProp.vp.x())) +
-          ",vp_y=" + (std::isnan(subProp.vp.y()) ? "0.0" : std::to_string(subProp.vp.y())) +
-          ",vp_z=" + (std::isnan(subProp.vp.z()) ? "0.0" : std::to_string(subProp.vp.z())) +
-          ",up_x=" + (std::isnan(subProp.up.x()) ? "0.0" : std::to_string(subProp.up.x())) +
-          ",up_y=" + (std::isnan(subProp.up.y()) ? "0.0" : std::to_string(subProp.up.y())) +
-          ",up_z=" + (std::isnan(subProp.up.z()) ? "0.0" : std::to_string(subProp.up.z())) +
-          ",cos_theta=" + (std::isnan(subProp.cosTheta) ? "0.0" : std::to_string(subProp.cosTheta)) +
-          ",vn_x=" + (std::isnan(subProp.vn.x()) ? "0.0" : std::to_string(subProp.vn.x())) +
-          ",vn_y=" + (std::isnan(subProp.vn.y()) ? "0.0" : std::to_string(subProp.vn.y())) +
-          ",vn_z=" + (std::isnan(subProp.vn.z()) ? "0.0" : std::to_string(subProp.vn.z())) +
-          ",vt_x=" + (std::isnan(subProp.vt.x()) ? "0.0" : std::to_string(subProp.vt.x())) +
-          ",vt_y=" + (std::isnan(subProp.vt.y()) ? "0.0" : std::to_string(subProp.vt.y())) +
-          ",vt_z=" + (std::isnan(subProp.vt.z()) ? "0.0" : std::to_string(subProp.vt.z())) +
-          ",ut_x=" + (std::isnan(subProp.ut.x()) ? "0.0" : std::to_string(subProp.ut.x())) +
-          ",ut_y=" + (std::isnan(subProp.ut.y()) ? "0.0" : std::to_string(subProp.ut.y())) +
-          ",ut_z=" + (std::isnan(subProp.ut.z()) ? "0.0" : std::to_string(subProp.ut.z())) +
-          ",uf_x=" + (std::isnan(subProp.uf.x()) ? "0.0" : std::to_string(subProp.uf.x())) +
-          ",uf_y=" + (std::isnan(subProp.uf.y()) ? "0.0" : std::to_string(subProp.uf.y())) +
-          ",uf_z=" + (std::isnan(subProp.uf.z()) ? "0.0" : std::to_string(subProp.uf.z())) +
-          ",vf_x=" + (std::isnan(subProp.vf.x()) ? "0.0" : std::to_string(subProp.vf.x())) +
-          ",vf_y=" + (std::isnan(subProp.vf.y()) ? "0.0" : std::to_string(subProp.vf.y())) +
-          ",vf_z=" + (std::isnan(subProp.vf.z()) ? "0.0" : std::to_string(subProp.vf.z())) +
+          " normal_x=" + nanToZero(subProp.normal.x()) +
+          ",normal_y=" + nanToZero(subProp.normal.y()) +
+          ",normal_z=" + nanToZero(subProp.normal.z()) +
+          ",centroid_x=" + nanToZero(subProp.centroid.x()) +
+          ",centroid_y=" + nanToZero(subProp.centroid.y()) +
+          ",centroid_z=" + nanToZero(subProp.centroid.z()) +
+          ",xr_x=" + nanToZero(subProp.xr.x()) +
+          ",xr_y=" + nanToZero(subProp.xr.y()) +
+          ",xr_z=" + nanToZero(subProp.xr.z()) +
+          ",area=" + nanToZero(subProp.area) +
+          ",vp_x=" + nanToZero(subProp.vp.x()) +
+          ",vp_y=" + nanToZero(subProp.vp.y()) +
+          ",vp_z=" + nanToZero(subProp.vp.z()) +
+          ",up_x=" + nanToZero(subProp.up.x()) +
+          ",up_y=" + nanToZero(subProp.up.y()) +
+          ",up_z=" + nanToZero(subProp.up.z()) +
+          ",cos_theta=" + nanToZero(subProp.cosTheta) +
+          ",vn_x=" + nanToZero(subProp.vn.x()) +
+          ",vn_y=" + nanToZero(subProp.vn.y()) +
+          ",vn_z=" + nanToZero(subProp.vn.z()) +
+          ",vt_x=" + nanToZero(subProp.vt.x()) +
+          ",vt_y=" + nanToZero(subProp.vt.y()) +
+          ",vt_z=" + nanToZero(subProp.vt.z()) +
+          ",ut_x=" + nanToZero(subProp.ut.x()) +
+          ",ut_y=" + nanToZero(subProp.ut.y()) +
+          ",ut_z=" + nanToZero(subProp.ut.z()) +
+          ",uf_x=" + nanToZero(subProp.uf.x()) +
+          ",uf_y=" + nanToZero(subProp.uf.y()) +
+          ",uf_z=" + nanToZero(subProp.uf.z()) +
+          ",vf_x=" + nanToZero(subProp.vf.x()) +
+          ",vf_y=" + nanToZero(subProp.vf.y()) +
+          ",vf_z=" + nanToZero(subProp.vf.z()) +
           ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
