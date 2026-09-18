@@ -14,18 +14,25 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// \file fft/Fft.cc
-/// \brief FFTW3 backend for fft::BackwardC2R / fft::BackwardC2C.
+/// \brief PocketFFT backend for fft::BackwardC2R / fft::BackwardC2C.
+///
+/// PocketFFT (thirdparty/pocketfft, BSD-3-Clause) is header-only. Its
+/// c2r / c2c functions take the array shape, byte strides and the axes to
+/// transform; `forward = false` is the e^{+i...} (backward) transform and
+/// `fct = 1` leaves it unnormalised, matching the previous FFTW3 plans.
+/// The plan cache (POCKETFFT_CACHE_SIZE) keeps the twiddle tables of the
+/// most recent transform lengths alive across calls, so repeated
+/// transforms of the same size do no planning work, as FFTW plans did not.
+/// PocketFFT does not modify its input.
 
 #include "fft/Fft.hh"
 
-#include <fftw3.h>
-
-#ifdef USE_FFTW3_OMP
-#include <omp.h>
-#endif
-
 #include <complex>
+#include <cstddef>
 #include <vector>
+
+#define POCKETFFT_CACHE_SIZE 16
+#include "pocketfft_hdronly.h"
 
 namespace gz
 {
@@ -35,53 +42,78 @@ namespace fft
 {
 namespace
 {
-/// \brief Configure FFTW threading once per process (idempotent).
-void InitThreadsOnce()
+/// \brief Threads per transform. PocketFFT can split one multi-dimensional
+/// transform over a std::thread pool, but for the grids used here
+/// (128^2 .. 512^2) the pool overhead exceeds the gain: on 4 cores a
+/// 128x128 c2r took 139 us with 4 threads against 66 us with one. The
+/// wave model instead runs its eight independent per-step transforms
+/// concurrently (LinearRandomFFTWaveSimulation::Impl::ExecutePending), so
+/// each transform stays single-threaded.
+constexpr size_t kThreads = 1;
+
+/// \brief Row-major byte strides of a contiguous array of `_shape` whose
+/// elements are `_elem` bytes.
+pocketfft::stride_t ContiguousStrides(const pocketfft::shape_t& _shape,
+    size_t _elem)
 {
-#ifdef USE_FFTW3_OMP
-  static const bool done = []()
+  pocketfft::stride_t s(_shape.size());
+  ptrdiff_t stride = static_cast<ptrdiff_t>(_elem);
+  for (size_t i = _shape.size(); i-- > 0;)
   {
-    fftw_init_threads();
-    fftw_plan_with_nthreads(omp_get_max_threads());
-    return true;
-  }();
-  (void)done;
-#endif
+    s[i] = stride;
+    stride *= static_cast<ptrdiff_t>(_shape[i]);
+  }
+  return s;
 }
 
-std::vector<int> ToInt(const Shape& _shape)
+pocketfft::shape_t ToShape(const Shape& _shape)
 {
-  return std::vector<int>(_shape.begin(), _shape.end());
+  return pocketfft::shape_t(_shape.begin(), _shape.end());
+}
+
+pocketfft::shape_t AllAxes(size_t _rank)
+{
+  pocketfft::shape_t axes(_rank);
+  for (size_t i = 0; i < _rank; ++i)
+    axes[i] = i;
+  return axes;
 }
 }  // namespace
 
 //////////////////////////////////////////////////
 const char* Backend()
 {
-  return "FFTW3";
+  return "PocketFFT";
 }
 
 //////////////////////////////////////////////////
 class BackwardC2R::Impl
 {
  public:
-  Impl(const Shape& _shape, const std::complex<double>* _in, double* _out)
+  Impl(const Shape& _shape, const std::complex<double>* _in, double* _out) :
+    shapeOut(ToShape(_shape)),
+    axes(AllAxes(_shape.size())),
+    in(_in),
+    out(_out)
   {
-    InitThreadsOnce();
-    const std::vector<int> n = ToInt(_shape);
-    // FFTW may overwrite the input of an out-of-place c2r plan; the
-    // pointer is only const at the interface.
-    plan = fftw_plan_dft_c2r(static_cast<int>(n.size()), n.data(),
-        reinterpret_cast<fftw_complex*>(
-            const_cast<std::complex<double>*>(_in)),
-        _out, FFTW_ESTIMATE);
+    pocketfft::shape_t shapeIn = shapeOut;
+    shapeIn.back() = shapeOut.back() / 2 + 1;
+    strideIn = ContiguousStrides(shapeIn, sizeof(std::complex<double>));
+    strideOut = ContiguousStrides(shapeOut, sizeof(double));
   }
-  ~Impl()
+
+  void Execute()
   {
-    if (plan)
-      fftw_destroy_plan(plan);
+    pocketfft::c2r<double>(shapeOut, strideIn, strideOut, axes,
+        /*forward=*/false, in, out, /*fct=*/1.0, kThreads);
   }
-  fftw_plan plan{nullptr};
+
+  pocketfft::shape_t shapeOut;
+  pocketfft::shape_t axes;
+  pocketfft::stride_t strideIn;
+  pocketfft::stride_t strideOut;
+  const std::complex<double>* in;
+  double* out;
 };
 
 BackwardC2R::BackwardC2R(const Shape& _shape,
@@ -95,7 +127,7 @@ BackwardC2R& BackwardC2R::operator=(BackwardC2R&&) noexcept = default;
 
 void BackwardC2R::Execute()
 {
-  fftw_execute(impl_->plan);
+  impl_->Execute();
 }
 
 //////////////////////////////////////////////////
@@ -103,22 +135,26 @@ class BackwardC2C::Impl
 {
  public:
   Impl(const Shape& _shape, const std::complex<double>* _in,
-      std::complex<double>* _out)
+      std::complex<double>* _out) :
+    shape(ToShape(_shape)),
+    axes(AllAxes(_shape.size())),
+    stride(ContiguousStrides(shape, sizeof(std::complex<double>))),
+    in(_in),
+    out(_out)
   {
-    InitThreadsOnce();
-    const std::vector<int> n = ToInt(_shape);
-    plan = fftw_plan_dft(static_cast<int>(n.size()), n.data(),
-        reinterpret_cast<fftw_complex*>(
-            const_cast<std::complex<double>*>(_in)),
-        reinterpret_cast<fftw_complex*>(_out),
-        FFTW_BACKWARD, FFTW_ESTIMATE);
   }
-  ~Impl()
+
+  void Execute()
   {
-    if (plan)
-      fftw_destroy_plan(plan);
+    pocketfft::c2c<double>(shape, stride, stride, axes,
+        /*forward=*/false, in, out, /*fct=*/1.0, kThreads);
   }
-  fftw_plan plan{nullptr};
+
+  pocketfft::shape_t shape;
+  pocketfft::shape_t axes;
+  pocketfft::stride_t stride;
+  const std::complex<double>* in;
+  std::complex<double>* out;
 };
 
 BackwardC2C::BackwardC2C(const Shape& _shape,
@@ -132,7 +168,7 @@ BackwardC2C& BackwardC2C::operator=(BackwardC2C&&) noexcept = default;
 
 void BackwardC2C::Execute()
 {
-  fftw_execute(impl_->plan);
+  impl_->Execute();
 }
 
 }  // namespace fft

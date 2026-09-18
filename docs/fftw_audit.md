@@ -183,3 +183,36 @@ storage.
    process-global thread clean-up is needed.
 5. Remove FFTW from CMake, README, CI and the brew script; add the PocketFFT
    licence to `LICENSE_THIRDPARTY`.
+
+## 6. Outcome of the port (added after the swap)
+
+* Backend: `pocketfft_hdronly.h` (commit `c90e55b`, BSD-3-Clause) vendored in
+  `gz-waves/thirdparty/pocketfft`, used only from `src/fft/Fft.cc` with
+  `POCKETFFT_CACHE_SIZE 16`. FFTW is gone from CMake, README, CI, the brew
+  script and the library's link line (`nm -D libgz-waves1.so | grep fftw_`
+  is empty). There was no Docker image to change.
+* c2r change: none applied. The production path already used c2r; the
+  reference model keeps c2c as recommended in §5 (its full-spectrum arrays
+  are what the Hermitian unit tests inspect).
+* Golden test (`tests/fft/test_fft_baseline.py`, FFTW3 values, tolerance
+  1e-10 absolute): PocketFFT reproduces all 16 896 field values and 2 048
+  reference values to 3.3e-16 and the 1 072 checksums / samples of the
+  128x128 and 256x256 grids to 3.6e-12 (sums over 65 536 terms).
+* Each transform is single-threaded (PocketFFT's internal thread pool was
+  slower than one thread at these sizes: 139 us vs 66 us for a 128x128 c2r
+  on 4 cores); the eight independent per-step transforms are executed
+  concurrently with OpenMP instead (`Impl::ExecutePending`).
+* Timing (`fft_baseline --bench 200`, 4 cores, RelWithDebInfo), eight
+  backward c2r transforms per step:
+
+  | Grid | FFTW3 + fftw3_omp, 4 threads | FFTW3, 1 thread | PocketFFT, 8 transforms in parallel (4 threads) | PocketFFT, 1 thread |
+  |---|---|---|---|---|
+  | 128 x 128 | 321 us/step (40 us/transform) | 361 us (45) | **213 us (27)** | 528 us (66) |
+  | 256 x 256 | 813 us (102) | 2064 us (258) | **745 us (93)** | 2328 us (291) |
+  | 512 x 512 | 3705 us (463) | 8383 us (1048) | **2852 us (357)** | 11077 us (1385) |
+
+  A single PocketFFT transform is 10-45 % slower than a single-threaded
+  FFTW plan; the per-step cost with threads available is 8-23 % lower than
+  before. For scale, the row-major to column-major copies in the accessors
+  cost 350-430 us (128x128) to ~10 ms (512x512) per step, more than the
+  transforms themselves; they are unchanged by this port.

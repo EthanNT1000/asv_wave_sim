@@ -63,7 +63,6 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     gz-common${GZ_COMMON_VER}::profiler
     gz-transport${GZ_TRANSPORT_VER}::gz-transport${GZ_TRANSPORT_VER}
     sdformat${SDF_VER}::sdformat${SDF_VER}
-    ${FFT_LIBRARIES}
   PRIVATE
     OpenMP::OpenMP_CXX
 )
@@ -84,6 +83,7 @@ target_include_directories(${PROJECT_LIBRARY_TARGET_NAME}
   ${EIGEN3_INCLUDE_DIR}
   PRIVATE
   ${PROJECT_SOURCE_DIR}/src
+  ${PROJECT_SOURCE_DIR}/thirdparty/pocketfft
 )
 
 include_directories(${PROJECT_SOURCE_DIR}/test)
@@ -94,5 +94,4 @@ gz_build_tests(TYPE UNIT
     ${gtest_sources}
   LIB_DEPS
     ${PROJECT_LIBRARY_TARGET_NAME}
-    ${FFT_LIBRARIES}
 )
