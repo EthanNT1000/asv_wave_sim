@@ -764,14 +764,17 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
     gzmsg << "Hydrodynamics: link world CoM pose: " << linkCoMPose << "\n";
 
     // RigidBody - the pose of the CoM is required for the dynamics.
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1).
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     geom::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    geom::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGPose is currently not available
-    // geom::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVelocity(_ecm).value());
-    // geom::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // First pass - store collisions and create bounding box
     auto bbox = math::AxisAlignedBox();
@@ -912,14 +915,17 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
     // RigidBody - the pose of the CoM is required for the dynamics.
     /// \todo check the components are available and valid
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1). This also feeds the aerodynamic pass below.
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     geom::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    geom::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGLinearVel is currently not available
-    // geom::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVel(_ecm).value());
-    // geom::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // Meshes
     // waves::Index nSubTri = 0;
@@ -957,22 +963,26 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       //
       // For each hull face the wind exerts a pressure force:
       //
-      //   F = ½ · ρ_air · Cd · A_above · vn² · n̂
+      //   F = −½ · ρ_air · Cd · A_above · vn² · n̂
       //
       //   ρ_air  = 1.225 kg/m³  (air density at sea level)
       //   Cd     = <cAeroDrag>  drag coefficient — 1.0 ≈ flat plate
       //   A_above = above-waterline area of this triangle (m²)
-      //   vn     = (v_wind − v_hull) · n̂   (m/s, normal component of
-      //            relative wind; zero when wind grazes the face, max
-      //            when wind is head-on)
+      //   vn     = (v_hull − v_wind) · n̂   (m/s, normal component of the
+      //            hull velocity relative to the air; positive when the
+      //            face moves into the wind, i.e. the face is windward)
       //   n̂      = outward unit normal of the face
       //
       // Intuition for vn²:
       //   Dynamic pressure  p = ½ ρ v²  gives force per unit area.
-      //   Projecting the wind onto the face normal gives vn = v·cos θ,
-      //   so the effective dynamic pressure is ½ ρ vn² — this naturally
-      //   accounts for the cosine taper as the wind angle increases.
-      //   Faces where vn ≤ 0 are on the lee side and are skipped.
+      //   Projecting the relative wind onto the face normal gives
+      //   vn = v·cos θ, so the effective dynamic pressure is ½ ρ vn² — this
+      //   naturally accounts for the cosine taper as the wind angle
+      //   increases. The pressure acts on the windward faces and pushes
+      //   them inward (−n̂), the same sign convention as the hydrodynamic
+      //   pressure drag; wind loads act on the projected windward area
+      //   (Fossen, Sec. 8.1). Faces where vn ≤ 0 are on the lee side and
+      //   are skipped.
       //
       // Torque: τ = r × F, where r = triangle centroid − CoM.
       if (this->aeroDragOn)
@@ -1019,16 +1029,17 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
               (tri.vh.y() + tri.vm.y() + tri.vl.y()) / 3.0,
               (tri.vh.z() + tri.vm.z() + tri.vl.z()) / 3.0);
           geom::Vector3 r = centroid - coMVec;
-          geom::Vector3 vHull = linVelocity + geom::Cross(angVelocity, r);
+          geom::Vector3 vHull =
+              linVelocity + geom::Cross(angVelocity, r);
 
-          // Normal component of relative wind.
-          geom::Vector3 vRel = windVelocity - vHull;
+          // Normal component of the hull velocity relative to the air.
+          geom::Vector3 vRel = vHull - windVelocity;
           double vn = geom::Dot(vRel, nHat);
           if (vn <= 0.0) continue;  // lee side — no pressure
 
-          // Aerodynamic force and torque on this face.
+          // Aerodynamic force and torque on this face (pushes inward).
           geom::Vector3 f =
-              (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+              (-0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
           geom::Vector3 tau = geom::Cross(r, f);
 
           fx += geom::ToDouble(f.x());
