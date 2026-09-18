@@ -15,14 +15,17 @@
 
 /// \file geom/Vector.hh
 /// \brief Vector algebra and elementary triangle functions on geom types.
+///
+/// The formulas match the CGAL Simple_cartesian<double> operations they
+/// replaced term by term (cross product component order, (p+q+r)/3
+/// centroid, (p+q)/2 midpoint, exact-zero collinearity test), so results are
+/// unchanged to the last bit where the compiler evaluates them in the same
+/// order.
 
 #ifndef GZ_WAVES_GEOM_VECTOR_HH_
 #define GZ_WAVES_GEOM_VECTOR_HH_
 
 #include <cmath>
-
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/number_utils.h>
 
 #include "gz/waves/geom/Types.hh"
 
@@ -33,40 +36,42 @@ namespace waves
 namespace geom
 {
 /// \brief The origin (0, 0, 0) as a point.
-inline Point3 Origin() { return Point3(CGAL::ORIGIN); }
+inline Point3 Origin() { return Point3::Zero(); }
 
 /// \brief The zero vector.
-inline Vector3 NullVector() { return Vector3(CGAL::NULL_VECTOR); }
+inline Vector3 NullVector() { return Vector3::Zero(); }
 
 /// \brief The zero 2D vector.
-inline Vector2 NullVector2() { return Vector2(CGAL::NULL_VECTOR); }
+inline Vector2 NullVector2() { return Vector2::Zero(); }
 
 /// \brief Convert a kernel scalar to double (identity for double kernels).
 inline double ToDouble(double x) { return x; }
 
 inline Vector3 Cross(const Vector3& a, const Vector3& b)
 {
-  return CGAL::cross_product(a, b);
+  return Vector3(a.y() * b.z() - a.z() * b.y(),
+                 a.z() * b.x() - a.x() * b.z(),
+                 a.x() * b.y() - a.y() * b.x());
 }
 
 inline double Dot(const Vector3& a, const Vector3& b)
 {
-  return CGAL::scalar_product(a, b);
+  return a.x() * b.x() + a.y() * b.y() + a.z() * b.z();
 }
 
 inline double SquaredLength(const Vector3& v)
 {
-  return v.squared_length();
+  return Dot(v, v);
 }
 
 inline double SquaredLength(const Vector2& v)
 {
-  return v.squared_length();
+  return v.x() * v.x() + v.y() * v.y();
 }
 
 inline double Length(const Vector3& v)
 {
-  return std::sqrt(v.squared_length());
+  return std::sqrt(SquaredLength(v));
 }
 
 /// \brief Point at the given coordinates.
@@ -87,7 +92,7 @@ inline Direction3 MakeDirection(double x, double y, double z)
 }
 
 /// \brief The vector representation of a direction.
-inline Vector3 DirectionVector(const Direction3& d)
+inline const Vector3& DirectionVector(const Direction3& d)
 {
   return d.vector();
 }
@@ -96,23 +101,29 @@ inline Vector3 DirectionVector(const Direction3& d)
 inline Vector3 UnitlessNormal(const Point3& p, const Point3& q,
     const Point3& r)
 {
-  return CGAL::normal(p, q, r);
+  return Cross(q - p, r - p);
 }
 
-/// \brief True if the three points are exactly collinear (kernel predicate).
+/// \brief True if the three points are exactly collinear: all three 2x2
+/// minors of (q - p, r - p) vanish (the CGAL Cartesian predicate).
 inline bool Collinear(const Point3& p, const Point3& q, const Point3& r)
 {
-  return CGAL::collinear(p, q, r);
+  const Vector3 n = Cross(q - p, r - p);
+  return n.x() == 0.0 && n.y() == 0.0 && n.z() == 0.0;
 }
 
 inline Point3 Centroid(const Point3& p, const Point3& q, const Point3& r)
 {
-  return CGAL::centroid(p, q, r);
+  return Point3((p.x() + q.x() + r.x()) / 3.0,
+                (p.y() + q.y() + r.y()) / 3.0,
+                (p.z() + q.z() + r.z()) / 3.0);
 }
 
 inline Point3 MidPoint(const Point3& p, const Point3& q)
 {
-  return CGAL::midpoint(p, q);
+  return Point3((p.x() + q.x()) / 2.0,
+                (p.y() + q.y()) / 2.0,
+                (p.z() + q.z()) / 2.0);
 }
 
 /// \brief Construct a line through two points.
@@ -125,7 +136,7 @@ inline Line MakeLine(const Point3& p, const Point3& q)
 inline Point3 LinePoint(const Line& l) { return l.point(); }
 
 /// \brief The direction vector of the line (q - p for MakeLine(p, q)).
-inline Vector3 LineVector(const Line& l) { return l.to_vector(); }
+inline const Vector3& LineVector(const Line& l) { return l.to_vector(); }
 
 }  // namespace geom
 }  // namespace waves

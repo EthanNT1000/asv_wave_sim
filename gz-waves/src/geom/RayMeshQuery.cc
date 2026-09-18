@@ -34,11 +34,15 @@ namespace waves
 namespace geom
 {
 // Phase 0 backend: the CGAL AABB tree (docs/cgal_audit.md, Sec. 1a).
-typedef CGAL::AABB_face_graph_triangle_primitive<cgal::Mesh> Primitive;
+typedef detail::CgalKernel Kernel;
+typedef Kernel::Point_3 KPoint;
+typedef Kernel::Ray_3 KRay;
+typedef Kernel::Direction_3 KDirection;
+typedef CGAL::AABB_face_graph_triangle_primitive<Mesh> Primitive;
 #if CGAL_VERSION_MAJOR >= 6
-typedef CGAL::AABB_traits_3<cgal::Kernel, Primitive> Traits;
+typedef CGAL::AABB_traits_3<Kernel, Primitive> Traits;
 #else
-typedef CGAL::AABB_traits<cgal::Kernel, Primitive> Traits;
+typedef CGAL::AABB_traits<Kernel, Primitive> Traits;
 #endif
 typedef CGAL::AABB_tree<Traits> Tree;
 
@@ -71,13 +75,15 @@ bool RayMeshQuery::FirstIntersection(
 {
 #if CGAL_VERSION_MAJOR >= 6
   typedef std::optional<Tree::Intersection_and_primitive_id<
-      cgal::Ray>::Type> RayIntersection;
+      KRay>::Type> RayIntersection;
 #else
   typedef boost::optional<Tree::Intersection_and_primitive_id<
-      cgal::Ray>::Type> RayIntersection;
+      KRay>::Type> RayIntersection;
 #endif
 
-  cgal::Ray query(_origin, _direction);
+  const Vector3& d = _direction.vector();
+  KRay query(KPoint(_origin.x(), _origin.y(), _origin.z()),
+      KDirection(d.x(), d.y(), d.z()));
   RayIntersection intersection = data->tree.first_intersection(query);
 
   // Search both directions
@@ -87,13 +93,13 @@ bool RayMeshQuery::FirstIntersection(
   if (intersection)
   {
 #if CGAL_VERSION_MAJOR >= 6
-    const cgal::Point3* p = std::get_if<cgal::Point3>(&(intersection->first));
+    const KPoint* p = std::get_if<KPoint>(&(intersection->first));
 #else
-    const cgal::Point3* p = boost::get<cgal::Point3>(&(intersection->first));
+    const KPoint* p = boost::get<KPoint>(&(intersection->first));
 #endif
     if (p)
     {
-      _intersection = *p;
+      _intersection = Point3(p->x(), p->y(), p->z());
       return true;
     }
   }

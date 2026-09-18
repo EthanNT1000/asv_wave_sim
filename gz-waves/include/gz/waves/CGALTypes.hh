@@ -1,4 +1,4 @@
-// Copyright (C) 2019  Rhys Mainwaring
+// Copyright (C) 2019-2026  Rhys Mainwaring and contributors
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,15 +14,17 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// \file CGALTypes.hh
-/// \brief Type definitions for CGAL structures used in the library.
+/// \brief Compatibility aliases for the historical gz::cgal type names.
+///
+/// New code uses gz::waves::geom (geom/Types.hh). These aliases keep the
+/// existing public signatures valid.
 
 #ifndef GZ_WAVES_CGALTYPES_HH_
 #define GZ_WAVES_CGALTYPES_HH_
 
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/Surface_mesh.h>
-
 #include <memory>
+
+#include "gz/waves/geom/Types.hh"
 
 namespace gz
 {
@@ -34,35 +36,23 @@ class RayMeshQuery;
 }  // namespace geom
 }  // namespace waves
 
-/// \brief Compatibility aliases. New code uses gz::waves::geom (see
-/// geom/Types.hh); these names are kept so existing signatures compile.
 namespace cgal
 {
-//////////////////////////////////////////////////
-// CGAL Typedefs
+typedef gz::waves::geom::detail::CgalKernel  Kernel;
+typedef gz::waves::geom::Direction3          Direction3;
+typedef gz::waves::geom::Point3              Point3;
+typedef gz::waves::geom::Line                Line;
+typedef gz::waves::geom::Ray                 Ray;
+typedef gz::waves::geom::Triangle            Triangle;
+typedef gz::waves::geom::Vector2             Vector2;
+typedef gz::waves::geom::Vector3             Vector3;
 
-// 2D/3D Linear Geometry
-typedef CGAL::Simple_cartesian<double>  Kernel;
-typedef Kernel::Direction_2             Direction2;
-typedef Kernel::Direction_3             Direction3;
-typedef Kernel::Point_3                 Point3;
-typedef Kernel::Line_3                  Line;
-typedef Kernel::Ray_3                   Ray;
-typedef Kernel::Triangle_3              Triangle;
-typedef Kernel::Vector_2                Vector2;
-typedef Kernel::Vector_3                Vector3;
-
-// SurfaceMesh
-typedef CGAL::Surface_mesh<Point3>      Mesh;
-typedef Mesh::Face_index                FaceIndex;
-typedef Mesh::Halfedge_index            HalfedgeIndex;
-typedef Mesh::Vertex_index              VertexIndex;
-
-// AABB Tree
-typedef gz::waves::geom::RayMeshQuery AABBTree;
-
-// Pointers
-typedef std::shared_ptr<Mesh>           MeshPtr;
+typedef gz::waves::geom::Mesh                Mesh;
+typedef gz::waves::geom::FaceIndex           FaceIndex;
+typedef Mesh::Halfedge_index                 HalfedgeIndex;
+typedef gz::waves::geom::VertexIndex         VertexIndex;
+typedef gz::waves::geom::RayMeshQuery        AABBTree;
+typedef gz::waves::geom::MeshPtr             MeshPtr;
 }  // namespace cgal
 }  // namespace gz
 

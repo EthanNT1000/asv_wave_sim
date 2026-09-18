@@ -31,7 +31,6 @@ namespace waves
 /// \brief Convert a CGAL Point3 to a gazebo Vector3d
 /// \param[in] point    The point to convert
 /// \return             The converted point
-gz::math::Vector3d ToGz(const geom::Point3& point);
 
 /// \brief Convert a CGAL Vector2 to a gazebo Vector2d
 /// \param[in] vector   The vector to convert

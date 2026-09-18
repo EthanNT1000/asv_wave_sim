@@ -71,18 +71,6 @@ geom::Point3 Geometry::MidPoint(
   return geom::MidPoint(_p0, _p1);
 }
 
-geom::Point3 Geometry::Normalize(const geom::Point3& _p)
-{
-  if (_p == geom::Origin())
-    return _p;
-  else
-  {
-    geom::Vector3 v = _p - geom::Origin();
-    double norm = std::sqrt(geom::SquaredLength(v));
-    return geom::Point3(_p.x()/norm, _p.y()/norm, _p.z()/norm);
-  }
-}
-
 geom::Vector2 Geometry::Normalize(const geom::Vector2& _v)
 {
   if (_v == geom::NullVector2())
