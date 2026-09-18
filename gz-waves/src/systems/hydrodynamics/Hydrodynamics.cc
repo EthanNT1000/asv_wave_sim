@@ -954,22 +954,26 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       //
       // For each hull face the wind exerts a pressure force:
       //
-      //   F = ½ · ρ_air · Cd · A_above · vn² · n̂
+      //   F = −½ · ρ_air · Cd · A_above · vn² · n̂
       //
       //   ρ_air  = 1.225 kg/m³  (air density at sea level)
       //   Cd     = <cAeroDrag>  drag coefficient — 1.0 ≈ flat plate
       //   A_above = above-waterline area of this triangle (m²)
-      //   vn     = (v_wind − v_hull) · n̂   (m/s, normal component of
-      //            relative wind; zero when wind grazes the face, max
-      //            when wind is head-on)
+      //   vn     = (v_hull − v_wind) · n̂   (m/s, normal component of the
+      //            hull velocity relative to the air; positive when the
+      //            face moves into the wind, i.e. the face is windward)
       //   n̂      = outward unit normal of the face
       //
       // Intuition for vn²:
       //   Dynamic pressure  p = ½ ρ v²  gives force per unit area.
-      //   Projecting the wind onto the face normal gives vn = v·cos θ,
-      //   so the effective dynamic pressure is ½ ρ vn² — this naturally
-      //   accounts for the cosine taper as the wind angle increases.
-      //   Faces where vn ≤ 0 are on the lee side and are skipped.
+      //   Projecting the relative wind onto the face normal gives
+      //   vn = v·cos θ, so the effective dynamic pressure is ½ ρ vn² — this
+      //   naturally accounts for the cosine taper as the wind angle
+      //   increases. The pressure acts on the windward faces and pushes
+      //   them inward (−n̂), the same sign convention as the hydrodynamic
+      //   pressure drag; wind loads act on the projected windward area
+      //   (Fossen, Sec. 8.1). Faces where vn ≤ 0 are on the lee side and
+      //   are skipped.
       //
       // Torque: τ = r × F, where r = triangle centroid − CoM.
       if (this->aeroDragOn)
@@ -1014,13 +1018,13 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
           cgal::Vector3 r = centroid - coMVec;
           cgal::Vector3 vHull = linVelocity + CGAL::cross_product(angVelocity, r);
 
-          // Normal component of relative wind.
-          cgal::Vector3 vRel = windVelocity - vHull;
+          // Normal component of the hull velocity relative to the air.
+          cgal::Vector3 vRel = vHull - windVelocity;
           double vn = CGAL::to_double(vRel * nHat);
           if (vn <= 0.0) continue;  // lee side — no pressure
 
-          // Aerodynamic force and torque on this face.
-          cgal::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+          // Aerodynamic force and torque on this face (pushes inward).
+          cgal::Vector3 f   = (-0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
           cgal::Vector3 tau = CGAL::cross_product(r, f);
 
           fx += CGAL::to_double(f.x());
