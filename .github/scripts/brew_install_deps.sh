@@ -25,7 +25,6 @@ PKGS=(
   gz-harmonic
   cgal
   embree
-  fftw
 )
 
 # install packages

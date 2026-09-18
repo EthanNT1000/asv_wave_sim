@@ -18,13 +18,8 @@
 
 #include <Eigen/Dense>
 
-#include <fftw3.h>
-
-#ifdef USE_FFTW3_OMP
-#include <omp.h>
-#endif
-
 #include <complex>
+#include <memory>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -42,10 +37,7 @@ namespace gz
 namespace waves
 {
 //////////////////////////////////////////////////
-LinearRandomFFTWaveSimulation::Impl::~Impl()
-{
-  DestroyFFTWPlans();
-}
+LinearRandomFFTWaveSimulation::Impl::~Impl() = default;
 
 //////////////////////////////////////////////////
 LinearRandomFFTWaveSimulation::Impl::Impl(
@@ -55,7 +47,7 @@ LinearRandomFFTWaveSimulation::Impl::Impl(
   nx_(nx),
   ny_(ny)
 {
-  CreateFFTWPlans();
+  CreateFFTPlans();
   ComputeBaseAmplitudes();
 }
 
@@ -69,7 +61,7 @@ LinearRandomFFTWaveSimulation::Impl::Impl(
   ny_(ny),
   nz_(nz)
 {
-  CreateFFTWPlans();
+  CreateFFTPlans();
   ComputeBaseAmplitudes();
 }
 
@@ -104,13 +96,33 @@ void LinearRandomFFTWaveSimulation::Impl::SetTime(double time)
 }
 
 //////////////////////////////////////////////////
+void LinearRandomFFTWaveSimulation::Impl::ExecutePending()
+{
+  fft::BackwardC2R* plans[8] = {
+    fft_plan0_.get(), fft_plan1_.get(), fft_plan2_.get(), fft_plan3_.get(),
+    fft_plan4_.get(), fft_plan5_.get(), fft_plan6_.get(), fft_plan7_.get()};
+
+  // Independent transforms into independent output arrays; the flags are
+  // distinct int elements, so each iteration touches its own memory.
+  #pragma omp parallel for schedule(dynamic)
+  for (int i = 0; i < 8; ++i)
+  {
+    if (fft_needs_update_[i])
+    {
+      plans[i]->Execute();
+      fft_needs_update_[i] = 0;
+    }
+  }
+}
+
+//////////////////////////////////////////////////
 void LinearRandomFFTWaveSimulation::Impl::ElevationAt(
     Eigen::Ref<Eigen::ArrayXXd> h)
 {
   // run the FFT
   if (fft_needs_update_[0])
   {
-    fftw_execute(fft_plan0_);
+    fft_plan0_->Execute();
     fft_needs_update_[0] = false;
   }
 
@@ -127,12 +139,12 @@ void LinearRandomFFTWaveSimulation::Impl::ElevationDerivAt(
   // run the FFTs
   if (fft_needs_update_[1])
   {
-    fftw_execute(fft_plan1_);
+    fft_plan1_->Execute();
     fft_needs_update_[1] = false;
   }
   if (fft_needs_update_[2])
   {
-    fftw_execute(fft_plan2_);
+    fft_plan2_->Execute();
     fft_needs_update_[2] = false;
   }
   // change from row to column major storage
@@ -149,12 +161,12 @@ void LinearRandomFFTWaveSimulation::Impl::DisplacementAt(
   // run the FFTs
   if (fft_needs_update_[3])
   {
-    fftw_execute(fft_plan3_);
+    fft_plan3_->Execute();
     fft_needs_update_[3] = false;
   }
   if (fft_needs_update_[4])
   {
-    fftw_execute(fft_plan4_);
+    fft_plan4_->Execute();
     fft_needs_update_[4] = false;
   }
 
@@ -173,17 +185,17 @@ void LinearRandomFFTWaveSimulation::Impl::DisplacementDerivAt(
   // run the FFTs
   if (fft_needs_update_[5])
   {
-    fftw_execute(fft_plan5_);
+    fft_plan5_->Execute();
     fft_needs_update_[5] = false;
   }
   if (fft_needs_update_[6])
   {
-    fftw_execute(fft_plan6_);
+    fft_plan6_->Execute();
     fft_needs_update_[6] = false;
   }
   if (fft_needs_update_[7])
   {
-    fftw_execute(fft_plan7_);
+    fft_plan7_->Execute();
     fft_needs_update_[7] = false;
   }
 
@@ -202,7 +214,7 @@ void LinearRandomFFTWaveSimulation::Impl::PressureAt(
   // run the FFTs
   if (fft_needs_update_[8 + iz])
   {
-    fftw_execute(fft_plan_p_[iz]);
+    fft_plan_p_[iz]->Execute();
     fft_needs_update_[8 + iz] = false;
   }
 
@@ -216,12 +228,10 @@ void LinearRandomFFTWaveSimulation::Impl::ElevationAt(
     Index ix, Index iy,
     double &eta)
 {
-  /// \todo(srmainwaring) running the FFT destroys the inputs for c2r plans
-
   // run the FFT
   if (fft_needs_update_[0])
   {
-    fftw_execute(fft_plan0_);
+    fft_plan0_->Execute();
     fft_needs_update_[0] = false;
   }
 
@@ -237,12 +247,12 @@ void LinearRandomFFTWaveSimulation::Impl::DisplacementAt(
   // run the FFTs
   if (fft_needs_update_[3])
   {
-    fftw_execute(fft_plan3_);
+    fft_plan3_->Execute();
     fft_needs_update_[3] = false;
   }
   if (fft_needs_update_[4])
   {
-    fftw_execute(fft_plan4_);
+    fft_plan4_->Execute();
     fft_needs_update_[4] = false;
   }
 
@@ -259,7 +269,7 @@ void LinearRandomFFTWaveSimulation::Impl::PressureAt(
   // run the FFT
   if (fft_needs_update_[8 + iz])
   {
-    fftw_execute(fft_plan_p_[iz]);
+    fft_plan_p_[iz]->Execute();
     fft_needs_update_[8 + iz] = false;
   }
 
@@ -373,7 +383,7 @@ void LinearRandomFFTWaveSimulation::Impl::ComputeCurrentAmplitudes(
     fft_needs_update_.cbegin(),
     fft_needs_update_.cend(),
     fft_needs_update_.begin(),
-    [] (bool) -> bool { return true; });
+    [] (int) -> int { return 1; });
 
   // create 1d views
   auto r = rho_.reshaped();
@@ -573,17 +583,9 @@ void LinearRandomFFTWaveSimulation::Impl::InitPressureGrid()
 }
 
 //////////////////////////////////////////////////
-void LinearRandomFFTWaveSimulation::Impl::CreateFFTWPlans()
+void LinearRandomFFTWaveSimulation::Impl::CreateFFTPlans()
 {
-  /// \note the input and output arrays may be overridden during
-  ///       planning, so allocate here before initialising.
-  ///       https://www.fftw.org/fftw3_doc/Complex-DFTs.html
-
-#ifdef USE_FFTW3_OMP
-  // fftw_init_threads is idempotent — safe to call on every construction.
-  fftw_init_threads();
-  fftw_plan_with_nthreads(omp_get_max_threads());
-#endif
+  const fft::Shape shape{nx_, ny_};
 
   // allocate storage for Fourier coefficients
   fft_h_      = Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_/2+1);
@@ -607,54 +609,39 @@ void LinearRandomFFTWaveSimulation::Impl::CreateFFTWPlans()
   fft_out6_ = Eigen::ArrayXXdRowMajor::Zero(nx_, ny_);
   fft_out7_ = Eigen::ArrayXXdRowMajor::Zero(nx_, ny_);
 
+  auto plan = [&shape](const Eigen::ArrayXXcdRowMajor& in,
+      Eigen::ArrayXXdRowMajor& out)
+  {
+    return std::make_unique<fft::BackwardC2R>(shape, in.data(), out.data());
+  };
+
   // elevation
-  fft_plan0_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_.data()),
-      reinterpret_cast<double*>(fft_out0_.data()),
-      FFTW_ESTIMATE);
-  fft_plan1_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_ikx_.data()),
-      reinterpret_cast<double*>(fft_out1_.data()),
-      FFTW_ESTIMATE);
-  fft_plan2_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_iky_.data()),
-      reinterpret_cast<double*>(fft_out2_.data()),
-      FFTW_ESTIMATE);
+  fft_plan0_ = plan(fft_h_, fft_out0_);
+  fft_plan1_ = plan(fft_h_ikx_, fft_out1_);
+  fft_plan2_ = plan(fft_h_iky_, fft_out2_);
 
   // xy-displacements
-  fft_plan3_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_sx_.data()),
-      reinterpret_cast<double*>(fft_out3_.data()),
-      FFTW_ESTIMATE);
-  fft_plan4_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_sy_.data()),
-      reinterpret_cast<double*>(fft_out4_.data()),
-      FFTW_ESTIMATE);
-  fft_plan5_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_kxkx_.data()),
-      reinterpret_cast<double*>(fft_out5_.data()),
-      FFTW_ESTIMATE);
-  fft_plan6_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_kyky_.data()),
-      reinterpret_cast<double*>(fft_out6_.data()),
-      FFTW_ESTIMATE);
-  fft_plan7_ = fftw_plan_dft_c2r_2d(nx_, ny_,
-      reinterpret_cast<fftw_complex*>(fft_h_kxky_.data()),
-      reinterpret_cast<double*>(fft_out7_.data()),
-      FFTW_ESTIMATE);
+  fft_plan3_ = plan(fft_sx_, fft_out3_);
+  fft_plan4_ = plan(fft_sy_, fft_out4_);
+  fft_plan5_ = plan(fft_h_kxkx_, fft_out5_);
+  fft_plan6_ = plan(fft_h_kyky_, fft_out6_);
+  fft_plan7_ = plan(fft_h_kxky_, fft_out7_);
 
   /// \todo(srmainwaring) pressure optimisation - adjust so that the
   /// entry for z = 0 is obtained from  fft_h_ / fft_out0_ / fft_plan0_
 
   // pressure
+  fft_in_p_.reserve(nz_);
+  fft_out_p_.reserve(nz_);
+  fft_plan_p_.reserve(nz_);
   for (Index iz=0; iz < nz_; ++iz)
   {
     fft_in_p_.push_back(Eigen::ArrayXXcdRowMajor::Zero(nx_, ny_/2+1));
     fft_out_p_.push_back(Eigen::ArrayXXdRowMajor::Zero(nx_, ny_));
-    fft_plan_p_.push_back(fftw_plan_dft_c2r_2d(nx_, ny_,
-        reinterpret_cast<fftw_complex*>(fft_in_p_[iz].data()),
-        reinterpret_cast<double*>(fft_out_p_[iz].data()),
-        FFTW_ESTIMATE));
+  }
+  for (Index iz=0; iz < nz_; ++iz)
+  {
+    fft_plan_p_.push_back(plan(fft_in_p_[iz], fft_out_p_[iz]));
   }
 
   // set lazy evaluation flags.
@@ -663,24 +650,7 @@ void LinearRandomFFTWaveSimulation::Impl::CreateFFTWPlans()
     fft_needs_update_.cbegin(),
     fft_needs_update_.cend(),
     fft_needs_update_.begin(),
-    [] (bool) -> bool { return true; });
-}
-
-//////////////////////////////////////////////////
-void LinearRandomFFTWaveSimulation::Impl::DestroyFFTWPlans()
-{
-  fftw_destroy_plan(fft_plan0_);
-  fftw_destroy_plan(fft_plan1_);
-  fftw_destroy_plan(fft_plan2_);
-  fftw_destroy_plan(fft_plan3_);
-  fftw_destroy_plan(fft_plan4_);
-  fftw_destroy_plan(fft_plan5_);
-  fftw_destroy_plan(fft_plan6_);
-  fftw_destroy_plan(fft_plan7_);
-
-#ifdef USE_FFTW3_OMP
-  fftw_cleanup_threads();
-#endif
+    [] (int) -> int { return 1; });
 }
 
 //////////////////////////////////////////////////
@@ -788,6 +758,7 @@ void LinearRandomFFTWaveSimulation::DisplacementAndDerivAt(
     Eigen::Ref<Eigen::ArrayXXd> dsydy,
     Eigen::Ref<Eigen::ArrayXXd> dsxdy) const
 {
+  impl_->ExecutePending();
   impl_->ElevationAt(h);
   impl_->ElevationDerivAt(dhdx, dhdy);
   impl_->DisplacementAt(sx, sy);
