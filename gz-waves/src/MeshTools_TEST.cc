@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include <CGAL/Timer.h>
+#include <chrono>
 
 #include <iostream>
 #include <memory>
@@ -32,15 +32,29 @@
 #include "gz/waves/Grid.hh"
 #include "gz/waves/Wavefield.hh"
 #include "gz/waves/WaveParameters.hh"
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 
-typedef CGAL::Timer Timer;
+namespace geom = gz::waves::geom;
+
+/// \brief Minimal stand-in for CGAL::Timer (wall clock, seconds).
+class Timer
+{
+ public:
+  void start() { start_ = std::chrono::steady_clock::now(); }
+  void stop() { stop_ = std::chrono::steady_clock::now(); }
+  double time() const
+  {
+    return std::chrono::duration<double>(stop_ - start_).count();
+  }
+ private:
+  std::chrono::steady_clock::time_point start_, stop_;
+};
 
 namespace cgal
 {
-using gz::cgal::Mesh;
-using gz::cgal::Triangle;
-using gz::cgal::Vector3;
+using gz::waves::geom::Mesh;
+using gz::waves::geom::Triangle;
+using gz::waves::geom::Vector3;
 }  // namespace cgal
 
 using gz::waves::Geometry;
@@ -60,7 +74,7 @@ void TestFillArraysUnitBox()
     gz::math::Vector3d(1, 1, 1),
     gz::math::Vector2d(1, 1));
 
-  cgal::Mesh mesh;
+  geom::Mesh mesh;
   std::vector<float> vertices;
   std::vector<int> indices;
   MeshTools::FillArrays(
@@ -95,7 +109,7 @@ void TestMakeSurfaceMeshUnitBox()
     gz::math::Vector3d(1, 1, 1),
     gz::math::Vector2d(1, 1));
 
-  cgal::Mesh mesh;
+  geom::Mesh mesh;
   MeshTools::MakeSurfaceMesh(
     *gz::common::MeshManager::Instance()->MeshByName(meshName),
     mesh);
@@ -109,7 +123,7 @@ void TestMakeSurfaceMeshUnitBox()
   // std::cout << "Faces " << std::endl;
   // for(auto&& face : mesh.faces())
   // {
-  //   cgal::Triangle tri = Geometry::MakeTriangle(mesh, face);
+  //   geom::Triangle tri = Geometry::MakeTriangle(mesh, face);
   //   std::cout << face << ": " << tri << std::endl;
   // }
 }
@@ -146,10 +160,11 @@ void TestExportWaveMesh()
 
   std::unique_ptr<gz::common::SubMesh> gzSubMesh(new gz::common::SubMesh());
   int64_t iv = 0;
-  for (auto&& face : mesh.faces())
+  const auto nFaces = geom::FaceCount(mesh);
+  for (decltype(nFaces) face = 0; face < nFaces; ++face)
   {
-    cgal::Triangle tri  = Geometry::MakeTriangle(mesh, face);
-    cgal::Vector3 normal = Geometry::Normal(tri);
+    geom::Triangle tri  = geom::FaceTriangle(mesh, face);
+    geom::Vector3 normal = Geometry::Normal(tri);
 
     gz::math::Vector3d gzP0(ToGz(tri[0]));
     gz::math::Vector3d gzP1(ToGz(tri[1]));
@@ -205,10 +220,11 @@ void TestExportGridMesh()
 
   std::unique_ptr<gz::common::SubMesh> gzSubMesh(new gz::common::SubMesh());
   int64_t iv = 0;
-  for (auto&& face : mesh.faces())
+  const auto nFaces = geom::FaceCount(mesh);
+  for (decltype(nFaces) face = 0; face < nFaces; ++face)
   {
-    cgal::Triangle tri  = Geometry::MakeTriangle(mesh, face);
-    cgal::Vector3 normal = Geometry::Normal(tri);
+    geom::Triangle tri  = geom::FaceTriangle(mesh, face);
+    geom::Vector3 normal = Geometry::Normal(tri);
 
     gz::math::Vector3d gzP0(ToGz(tri[0]));
     gz::math::Vector3d gzP1(ToGz(tri[1]));

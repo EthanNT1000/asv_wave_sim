@@ -21,13 +21,15 @@
 
 #include "gz/waves/Grid.hh"
 #include "gz/waves/Geometry.hh"
-#include "gz/waves/CGALTypes.hh"
+#include "gz/waves/geom/Geom.hh"
 #include "gz/waves/Types.hh"
+
+namespace geom = gz::waves::geom;
 
 namespace cgal
 {
-using gz::cgal::Direction3;
-using gz::cgal::Point3;
+using gz::waves::geom::Direction3;
+using gz::waves::geom::Point3;
 }  // namespace cgal
 
 using gz::waves::Index;
@@ -82,8 +84,8 @@ TEST(Grid, Constructor)
   // SetPoint
   // for (Index i=0; i<grid.GetVertexCount(); ++i)
   // {
-  //   cgal::Point3 p = grid.GetPoint(i);
-  //   p += cgal::Vector3(0, 0, 10);
+  //   geom::Point3 p = grid.GetPoint(i);
+  //   p += geom::Vector3(0, 0, 10);
   //   grid.SetPoint(i, p);
   // }
   // for(auto&& vertex : mesh->vertices())
@@ -309,13 +311,13 @@ TEST(Grid, FindIntersectionTriangle)
     EXPECT_EQ(index[2], 0);
 
     // Find intersection
-    cgal::Point3 origin = cgal::Point3(x, y, 10);
-    cgal::Direction3 direction = cgal::Direction3(0, 0, 1);
-    cgal::Point3 point = CGAL::ORIGIN;
+    geom::Point3 origin = geom::Point3(x, y, 10);
+    geom::Direction3 direction = geom::Direction3(0, 0, 1);
+    geom::Point3 point = geom::Origin();
     isFound = GridTools::FindIntersectionTriangle(
       grid, origin, direction, index, point);
     EXPECT_EQ(isFound, true);
-    EXPECT_EQ(point, cgal::Point3(x, y, 0));
+    EXPECT_EQ(point, geom::Point3(x, y, 0));
   }
 
   { // cell(0, 0)
@@ -331,13 +333,13 @@ TEST(Grid, FindIntersectionTriangle)
     EXPECT_EQ(index[2], 1);
 
     // Find intersection
-    cgal::Point3 origin = cgal::Point3(x, y, 10);
-    cgal::Direction3 direction = cgal::Direction3(0, 0, 1);
-    cgal::Point3 point = CGAL::ORIGIN;
+    geom::Point3 origin = geom::Point3(x, y, 10);
+    geom::Direction3 direction = geom::Direction3(0, 0, 1);
+    geom::Point3 point = geom::Origin();
     isFound = GridTools::FindIntersectionTriangle(
       grid, origin, direction, index, point);
     EXPECT_EQ(isFound, true);
-    EXPECT_EQ(point, cgal::Point3(x, y, 0));
+    EXPECT_EQ(point, geom::Point3(x, y, 0));
   }
 
   { // cell(2, 1)
@@ -353,13 +355,13 @@ TEST(Grid, FindIntersectionTriangle)
     EXPECT_EQ(index[2], 0);
 
     // Find intersection
-    cgal::Point3 origin = cgal::Point3(x, y, 10);
-    cgal::Direction3 direction = cgal::Direction3(0, 0, 1);
-    cgal::Point3 point = CGAL::ORIGIN;
+    geom::Point3 origin = geom::Point3(x, y, 10);
+    geom::Direction3 direction = geom::Direction3(0, 0, 1);
+    geom::Point3 point = geom::Origin();
     isFound = GridTools::FindIntersectionTriangle(
       grid, origin, direction, index, point);
     EXPECT_EQ(isFound, true);
-    EXPECT_EQ(point, cgal::Point3(x, y, 0));
+    EXPECT_EQ(point, geom::Point3(x, y, 0));
   }
 }
 
@@ -396,13 +398,13 @@ TEST(Grid, FindIntersectionCell)
     EXPECT_EQ(index[2], 1);
 
     // Find intersection
-    cgal::Point3 origin = cgal::Point3(x, y, 10);
-    cgal::Direction3 direction = cgal::Direction3(0, 0, 1);
-    cgal::Point3 point = CGAL::ORIGIN;
+    geom::Point3 origin = geom::Point3(x, y, 10);
+    geom::Direction3 direction = geom::Direction3(0, 0, 1);
+    geom::Point3 point = geom::Origin();
     isFound = GridTools::FindIntersectionCell(
       grid, origin, direction, index, point);
     EXPECT_EQ(isFound, true);
-    EXPECT_EQ(point, cgal::Point3(x, y, 0));
+    EXPECT_EQ(point, geom::Point3(x, y, 0));
 
     std::cout << std::endl;
   }
@@ -438,13 +440,13 @@ TEST(Grid, FindIntersectionGrid)
     index = { 0, 0, 0 };
 
     // Find intersection
-    cgal::Point3 origin = cgal::Point3(x, y, 10);
-    cgal::Direction3 direction = cgal::Direction3(0, 0, 1);
-    cgal::Point3 point = CGAL::ORIGIN;
+    geom::Point3 origin = geom::Point3(x, y, 10);
+    geom::Direction3 direction = geom::Direction3(0, 0, 1);
+    geom::Point3 point = geom::Origin();
     isFound = GridTools::FindIntersectionGrid(
       grid, origin, direction, index, point);
     EXPECT_EQ(isFound, true);
-    EXPECT_EQ(point, cgal::Point3(x, y, 0));
+    EXPECT_EQ(point, geom::Point3(x, y, 0));
 
     // Found index
     EXPECT_EQ(index[0], 3);
