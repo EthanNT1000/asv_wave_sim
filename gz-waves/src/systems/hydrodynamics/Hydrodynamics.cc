@@ -107,7 +107,8 @@ void ApplyPose(
     const geom::Point3& p0 = geom::VertexPoint(_source, i);
     gz::math::Vector3d gzP1 =
         rot.RotateVector({p0.x(), p0.y(), p0.z()}) + pos;
-    geom::SetVertexPoint(_target, i, geom::Point3(gzP1.X(), gzP1.Y(), gzP1.Z()));
+    geom::SetVertexPoint(_target, i,
+        geom::Point3(gzP1.X(), gzP1.Y(), gzP1.Z()));
   }
 }
 

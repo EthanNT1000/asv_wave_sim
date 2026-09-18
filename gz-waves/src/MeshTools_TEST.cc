@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include <gtest/gtest.h>
+
 #include <chrono>
 
 #include <iostream>
@@ -50,23 +52,14 @@ class Timer
   std::chrono::steady_clock::time_point start_, stop_;
 };
 
-namespace cgal
-{
-using gz::waves::geom::Mesh;
-using gz::waves::geom::Triangle;
-using gz::waves::geom::Vector3;
-}  // namespace cgal
-
 using gz::waves::Geometry;
 using gz::waves::Grid;
 using gz::waves::MeshTools;
 using gz::waves::ToGz;
 
 //////////////////////////////////////////////////
-void TestFillArraysUnitBox()
+TEST(MeshTools, FillArraysUnitBox)
 {
-  std::cout << "TestFillArraysUnitBox..." << std::endl;
-
   // Mesh: 1 x 1 x 1 box
   std::string meshName("box_1x1x1");
   gz::common::MeshManager::Instance()->CreateBox(
@@ -74,7 +67,6 @@ void TestFillArraysUnitBox()
     gz::math::Vector3d(1, 1, 1),
     gz::math::Vector2d(1, 1));
 
-  geom::Mesh mesh;
   std::vector<float> vertices;
   std::vector<int> indices;
   MeshTools::FillArrays(
@@ -90,18 +82,14 @@ void TestFillArraysUnitBox()
   //   std::cout << i << std::endl;
 
   // Vertices: 6 sides, 4 points per side, 3 coordinates per point
-  std::cout << "test: " << vertices.size() << std::endl;
-  std::cout << "chck: " << 6*4*3 << std::endl;
+  EXPECT_EQ(vertices.size(), 6u * 4u * 3u);
 
   // Indices: 6 sides, 2 faces per side, 3 vertices per face
-  std::cout << "test: " << indices.size() << std::endl;
-  std::cout << "chck: " << 6*2*3 << std::endl;
+  EXPECT_EQ(indices.size(), 6u * 2u * 3u);
 }
 
-void TestMakeSurfaceMeshUnitBox()
+TEST(MeshTools, MakeSurfaceMeshUnitBox)
 {
-  std::cout << "TestMakeSurfaceMeshUnitBox..." << std::endl;
-
   // Mesh: 1 x 1 x 1 box
   std::string meshName("box_1x1x1");
   gz::common::MeshManager::Instance()->CreateBox(
@@ -126,78 +114,11 @@ void TestMakeSurfaceMeshUnitBox()
   //   geom::Triangle tri = Geometry::MakeTriangle(mesh, face);
   //   std::cout << face << ": " << tri << std::endl;
   // }
+
+  // 6 sides, 4 vertices per side; 6 sides, 2 triangles per side.
+  EXPECT_EQ(geom::VertexCount(mesh), 6 * 4);
+  EXPECT_EQ(geom::FaceCount(mesh), 6 * 2);
 }
-
-//////////////////////////////////////////////////
-#if 0  // DEPRECATED FEATURE
-void TestExportWaveMesh()
-{
-  std::cout << "TestExportWaveMesh..." << std::endl;
-
-  // Wave parameters
-  std::shared_ptr<WaveParameters> waveParams =
-      std::make_shared<WaveParameters>();
-  waveParams->SetNumber(1);
-  waveParams->SetAmplitude(2.0);
-  waveParams->SetPeriod(10.0);
-  waveParams->SetDirection(gz::math::Vector2d(1.0, 1.0));
-
-  // Wavefield
-  Wavefield wavefield;
-  wavefield.SetParameters(waveParams);
-  wavefield.Update(0);
-
-  // Get Mesh
-  const auto& mesh = *wavefield.GetMesh();
-
-  // Create GzMesh
-  Timer t;
-  t.start();
-
-  std::string name("wavefield");
-  std::shared_ptr<gz::common::Mesh> gzMesh(new gz::common::Mesh());
-  gzMesh->SetName(name);
-
-  std::unique_ptr<gz::common::SubMesh> gzSubMesh(new gz::common::SubMesh());
-  int64_t iv = 0;
-  const auto nFaces = geom::FaceCount(mesh);
-  for (decltype(nFaces) face = 0; face < nFaces; ++face)
-  {
-    geom::Triangle tri  = geom::FaceTriangle(mesh, face);
-    geom::Vector3 normal = Geometry::Normal(tri);
-
-    gz::math::Vector3d gzP0(ToGz(tri[0]));
-    gz::math::Vector3d gzP1(ToGz(tri[1]));
-    gz::math::Vector3d gzP2(ToGz(tri[2]));
-    gz::math::Vector3d gzNormal(ToGZ(normal));
-
-    gzSubMesh->AddVertex(gzP0);
-    gzSubMesh->AddVertex(gzP1);
-    gzSubMesh->AddVertex(gzP2);
-    gzSubMesh->AddNormal(gzNormal);
-    gzSubMesh->AddNormal(gzNormal);
-    gzSubMesh->AddNormal(gzNormal);
-
-    gzSubMesh->AddIndex(iv++);
-    gzSubMesh->AddIndex(iv++);
-    gzSubMesh->AddIndex(iv++);
-
-    // @TODO - calculate texture coordinates
-  }
-
-  gzMesh->AddSubMesh(*gzSubMesh);
-
-  t.stop();
-  std::cout << "MakeGzMesh: " << t.time() << " sec" << std::endl;
-
-  auto& meshManager = *gz::common::MeshManager::Instance();
-
-  meshManager.Export(
-    gzMesh.get(),
-    "/Users/rhys/Code/ros/asv_ws/tmp/wavefield",
-    "dae");
-}
-#endif
 
 //////////////////////////////////////////////////
 void TestExportGridMesh()
@@ -220,8 +141,8 @@ void TestExportGridMesh()
 
   std::unique_ptr<gz::common::SubMesh> gzSubMesh(new gz::common::SubMesh());
   int64_t iv = 0;
-  const auto nFaces = geom::FaceCount(mesh);
-  for (decltype(nFaces) face = 0; face < nFaces; ++face)
+  const geom::Index nFaces = geom::FaceCount(mesh);
+  for (geom::Index face = 0; face < nFaces; ++face)
   {
     geom::Triangle tri  = geom::FaceTriangle(mesh, face);
     geom::Vector3 normal = Geometry::Normal(tri);
@@ -258,11 +179,3 @@ void TestExportGridMesh()
     "dae");
 }
 
-//////////////////////////////////////////////////
-void RunMeshToolsTests()
-{
-  TestFillArraysUnitBox();
-  TestMakeSurfaceMeshUnitBox();
-  // TestExportWaveMesh();
-  // TestExportGridMesh();
-}
