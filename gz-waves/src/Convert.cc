@@ -27,11 +27,6 @@ namespace waves
 //////////////////////////////////////////////////
 // Conversions
 
-gz::math::Vector3d ToGz(const geom::Point3& _point)
-{
-  return gz::math::Vector3d(_point.x(), _point.y(), _point.z());
-}
-
 gz::math::Vector2d ToGz(const geom::Vector2& _vector)
 {
   return gz::math::Vector2d(_vector.x(), _vector.y());

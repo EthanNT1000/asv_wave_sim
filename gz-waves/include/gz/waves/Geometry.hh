@@ -81,13 +81,6 @@ class Geometry
     const geom::Point3& _p0,
     const geom::Point3& _p1);
 
-  /// \brief Calculate the point on a line from the origin passing through _p
-  /// such that the vector from the origin to returned point has unit length.
-  ///
-  /// \param[in] _p     A point.
-  /// \return           The point that normalises the vector from
-  ///                   the origin to _p.
-  static geom::Point3 Normalize(const geom::Point3& _p);
 
   /// \brief Normalise a Vector2 (i.e. ensure it has unit length)
   ///
