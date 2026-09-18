@@ -15,8 +15,15 @@
 
 #include "Hydrodynamics.hh"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <omp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -24,8 +31,6 @@
 #include <utility>
 #include <vector>
 #include <string>
-
-#include <omp.h>
 
 #include <gz/common/MeshManager.hh>
 #include <gz/common/Profiler.hh>
@@ -65,12 +70,6 @@
 #include "gz/waves/components/Wavefield.hh"
 
 #include "Collision.hh"
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 
 namespace gz
 {
@@ -294,8 +293,8 @@ private: void UpdatePhysics(const UpdateInfo& _info,
 public: bool IsEnabled(Entity _entity,
   const EntityComponentManager& _ecm) const;
 
-      /// \brief Iterate over the links in a model, and create a CGAL SurfaceMesh
-      /// for each collison in each link.
+      /// \brief Iterate over the links in a model, and create a CGAL
+      /// SurfaceMesh for each collison in each link.
       ///
       /// \param[in]  _model    The model being processed.
       /// \param[out] _links    A vector holding a copy of pointers to
@@ -373,12 +372,14 @@ public: void DeleteUnderwaterSurfaceMarkers();
       /// \param[in] _msg Wave parameters message.
 public: void OnWaveMarkersMsg(const gz::msgs::Param& _msg);
 
-public: void PublishSpeedThroughWater(const UpdateInfo& _info, EntityComponentManager& _ecm);
+public: void PublishSpeedThroughWater(const UpdateInfo& _info,
+  EntityComponentManager& _ecm);
 
 public: void SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm);
 
-private: void AppendToStreamOrSend(std::stringstream& _stream, const std::string& _line);
+private: void AppendToStreamOrSend(std::stringstream& _stream,
+  const std::string& _line);
 
        /// \brief Name of the world
 public: std::string worldName;
@@ -539,7 +540,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
   }
 
   {
-    std::string defaultTopic = "/model/" + this->dataPtr->model.Name(_ecm) + "/speed_through_water";
+    std::string defaultTopic = "/model/" +
+      this->dataPtr->model.Name(_ecm) + "/speed_through_water";
     if (_sdf->HasElement("SpeedThroughWater")) {
       auto sdfWC = _sdf->GetElementImpl("SpeedThroughWater");
       this->dataPtr->speedThroughWaterTopicHeader =
@@ -561,9 +563,11 @@ void Hydrodynamics::Configure(const Entity& _entity,
 
   if (_sdf->HasElement("influxDBUdp")) {
     auto sdfInflux = _sdf->GetElementImpl("influxDBUdp");
-    std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
+    std::string ip =
+      waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
     int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8094);
-    this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
+    this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(
+      *sdfInflux, "measurement", "asv_wave_sim_triangle");
     this->dataPtr->influxDBUpdateRate =
       waves::Utilities::SdfParamDouble(*sdfInflux, "update_rate", 1000.0);
 
@@ -572,7 +576,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
     this->dataPtr->influxAddr.sin_port = htons(port);
 
     // Convert IP address string to binary form
-    if (inet_pton(AF_INET, ip.c_str(), &this->dataPtr->influxAddr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ip.c_str(),
+        &this->dataPtr->influxAddr.sin_addr) <= 0) {
       gzerr << "Invalid address/Address not supported" << std::endl;
       return;
     }
@@ -584,7 +589,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
     }
 
     setsockopt(this->dataPtr->influxUdpSockfd, SOL_SOCKET, SO_SNDBUF,
-      &this->dataPtr->influxSendBuffSize, sizeof(this->dataPtr->influxSendBuffSize));
+      &this->dataPtr->influxSendBuffSize,
+      sizeof(this->dataPtr->influxSendBuffSize));
   }
 }
 ///////////////////////////////////////////////////
@@ -757,14 +763,17 @@ bool HydrodynamicsPrivate::InitPhysics(EntityComponentManager& _ecm)
     gzmsg << "Hydrodynamics: link world CoM pose: " << linkCoMPose << "\n";
 
     // RigidBody - the pose of the CoM is required for the dynamics.
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1).
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     geom::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    geom::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGPose is currently not available
-    // geom::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVelocity(_ecm).value());
-    // geom::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // First pass - store collisions and create bounding box
     auto bbox = math::AxisAlignedBox();
@@ -905,14 +914,17 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
     // RigidBody - the pose of the CoM is required for the dynamics.
     /// \todo check the components are available and valid
+    // WorldLinearVelocity is the velocity of the link origin; the
+    // hydrodynamics take lever arms from the CoM, so shift the velocity to
+    // the CoM with the rigid-body relation v_CoM = v_link + omega x r_g
+    // (Fossen, Sec. 3.1). This also feeds the aerodynamic pass below.
+    const gz::math::Vector3d linkLinVel =
+      hd->link.WorldLinearVelocity(_ecm).value();
+    const gz::math::Vector3d linkAngVel =
+      hd->link.WorldAngularVelocity(_ecm).value();
+    geom::Vector3 angVelocity = waves::ToVector3(linkAngVel);
     geom::Vector3 linVelocity = waves::ToVector3(
-      hd->link.WorldLinearVelocity(_ecm).value());
-    geom::Vector3 angVelocity = waves::ToVector3(
-      hd->link.WorldAngularVelocity(_ecm).value());
-    /// \todo WorldCoGLinearVel is currently not available
-    // geom::Vector3 linVelocityCoM = waves::ToVector3(
-    //     hd->link.WorldCoGLinearVel(_ecm).value());
-    // geom::Vector3 linVelocityCoM = linVelocity;
+      linkLinVel + linkAngVel.Cross(linkCoMPose.Pos() - linkPose.Pos()));
 
     // Meshes
     // waves::Index nSubTri = 0;
@@ -929,7 +941,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
       // Update hydrodynamics
       hd->hydrodynamics[j]->Update(
-        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity, _info.simTime);
+        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity,
+        _info.simTime);
 
       // Apply forces to the Link
       auto force = waves::ToGz(hd->hydrodynamics[j]->Force());
@@ -949,22 +962,26 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
       //
       // For each hull face the wind exerts a pressure force:
       //
-      //   F = ½ · ρ_air · Cd · A_above · vn² · n̂
+      //   F = −½ · ρ_air · Cd · A_above · vn² · n̂
       //
       //   ρ_air  = 1.225 kg/m³  (air density at sea level)
       //   Cd     = <cAeroDrag>  drag coefficient — 1.0 ≈ flat plate
       //   A_above = above-waterline area of this triangle (m²)
-      //   vn     = (v_wind − v_hull) · n̂   (m/s, normal component of
-      //            relative wind; zero when wind grazes the face, max
-      //            when wind is head-on)
+      //   vn     = (v_hull − v_wind) · n̂   (m/s, normal component of the
+      //            hull velocity relative to the air; positive when the
+      //            face moves into the wind, i.e. the face is windward)
       //   n̂      = outward unit normal of the face
       //
       // Intuition for vn²:
       //   Dynamic pressure  p = ½ ρ v²  gives force per unit area.
-      //   Projecting the wind onto the face normal gives vn = v·cos θ,
-      //   so the effective dynamic pressure is ½ ρ vn² — this naturally
-      //   accounts for the cosine taper as the wind angle increases.
-      //   Faces where vn ≤ 0 are on the lee side and are skipped.
+      //   Projecting the relative wind onto the face normal gives
+      //   vn = v·cos θ, so the effective dynamic pressure is ½ ρ vn² — this
+      //   naturally accounts for the cosine taper as the wind angle
+      //   increases. The pressure acts on the windward faces and pushes
+      //   them inward (−n̂), the same sign convention as the hydrodynamic
+      //   pressure drag; wind loads act on the projected windward area
+      //   (Fossen, Sec. 8.1). Faces where vn ≤ 0 are on the lee side and
+      //   are skipped.
       //
       // Torque: τ = r × F, where r = triangle centroid − CoM.
       if (this->aeroDragOn)
@@ -979,7 +996,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
         double fx = 0.0, fy = 0.0, fz = 0.0;
         double tx = 0.0, ty = 0.0, tz = 0.0;
 
-        #pragma omp parallel for reduction(+:fx,fy,fz,tx,ty,tz) schedule(static)
+        #pragma omp parallel for reduction(+: fx, fy, fz, tx, ty, tz) \
+            schedule(static)
         for (int ti = 0; ti < nTris; ++ti)
         {
           const auto& tri = tris[ti];
@@ -989,9 +1007,12 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
           // For fully above-water faces PopulateSubmergedTriangle returns
           // early leaving subArea as NaN — handle each case explicitly.
           double areaAbove;
-          if      (tri.hh <= 0.0) continue;                          // fully submerged
-          else if (tri.hl  > 0.0) areaAbove = tri.area;              // fully above
-          else                    areaAbove = tri.area - tri.subArea; // partial
+          if (tri.hh <= 0.0)
+            continue;  // fully submerged
+          else if (tri.hl > 0.0)
+            areaAbove = tri.area;  // fully above
+          else
+            areaAbove = tri.area - tri.subArea;  // partial
 
           if (areaAbove < 1e-9) continue;
 
@@ -1007,15 +1028,17 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
               (tri.vh.y() + tri.vm.y() + tri.vl.y()) / 3.0,
               (tri.vh.z() + tri.vm.z() + tri.vl.z()) / 3.0);
           geom::Vector3 r = centroid - coMVec;
-          geom::Vector3 vHull = linVelocity + geom::Cross(angVelocity, r);
+          geom::Vector3 vHull =
+              linVelocity + geom::Cross(angVelocity, r);
 
-          // Normal component of relative wind.
-          geom::Vector3 vRel = windVelocity - vHull;
+          // Normal component of the hull velocity relative to the air.
+          geom::Vector3 vRel = vHull - windVelocity;
           double vn = geom::Dot(vRel, nHat);
           if (vn <= 0.0) continue;  // lee side — no pressure
 
-          // Aerodynamic force and torque on this face.
-          geom::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+          // Aerodynamic force and torque on this face (pushes inward).
+          geom::Vector3 f =
+              (-0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
           geom::Vector3 tau = geom::Cross(r, f);
 
           fx += geom::ToDouble(f.x());
@@ -1032,7 +1055,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
         if (aeroForceSum.IsFinite())
           hd->link.AddWorldForce(_ecm, aeroForceSum);
         if (aeroTorqueSum.IsFinite())
-          hd->link.AddWorldWrench(_ecm, gz::math::Vector3d::Zero, aeroTorqueSum);
+          hd->link.AddWorldWrench(
+              _ecm, gz::math::Vector3d::Zero, aeroTorqueSum);
       }
 
       // Info for Markers
@@ -1446,7 +1470,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitWaterPatchMarkers(_ecm);
 
     this->UpdateWaterPatchMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteWaterPatch)
     {
@@ -1461,7 +1486,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitWaterlineMarkers(_ecm);
 
     this->UpdateWaterlineMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteWaterline)
     {
@@ -1476,7 +1502,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitUnderwaterSurfaceMarkers(_ecm);
 
     this->UpdateUnderwaterSurfaceMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteUnderwaterSurface)
     {
@@ -1617,6 +1644,11 @@ void HydrodynamicsPrivate::DeleteUnderwaterSurfaceMarkers()
 //////////////////////////////////////////////////
 void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm) {
+  // Influx line protocol cannot carry NaN; write 0.0 instead.
+  auto nanToZero = [](double v) -> std::string {
+    return std::isnan(v) ? std::string("0.0") : std::to_string(v);
+  };
+
   double currentTime = std::chrono::duration<double>(_info.simTime).count();
   if ((currentTime - this->influxPrevTime) < (1.0 / this->influxDBUpdateRate))
   {
@@ -1642,49 +1674,50 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
           ",normal_y=" + std::to_string(prop.normal.y()) +
           ",normal_z=" + std::to_string(prop.normal.z()) +
           ",area=" + std::to_string(prop.area) +
-          ",submerged_area=" + (isnan(prop.subArea) ? "0.0" : std::to_string(prop.subArea)) +
+          ",submerged_area=" + nanToZero(prop.subArea) +
           ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
       }
 
       index = 0;
-      for (auto&& subProp : hd->hydrodynamics[j]->GetSubmergedTriangleProperties()) {
+      for (auto&& subProp :
+          hd->hydrodynamics[j]->GetSubmergedTriangleProperties()) {
         std::string line = influxDBMeasurement + "_submerged_triangle,link=" +
           _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data() +
           ",index=" + std::to_string(index++) +
-          " normal_x=" + (isnan(subProp.normal.x()) ? "0.0" : std::to_string(subProp.normal.x())) +
-          ",normal_y=" + (isnan(subProp.normal.y()) ? "0.0" : std::to_string(subProp.normal.y())) +
-          ",normal_z=" + (isnan(subProp.normal.z()) ? "0.0" : std::to_string(subProp.normal.z())) +
-          ",centroid_x=" + (isnan(subProp.centroid.x()) ? "0.0" : std::to_string(subProp.centroid.x())) +
-          ",centroid_y=" + (isnan(subProp.centroid.y()) ? "0.0" : std::to_string(subProp.centroid.y())) +
-          ",centroid_z=" + (isnan(subProp.centroid.z()) ? "0.0" : std::to_string(subProp.centroid.z())) +
-          ",xr_x=" + (isnan(subProp.xr.x()) ? "0.0" : std::to_string(subProp.xr.x())) +
-          ",xr_y=" + (isnan(subProp.xr.y()) ? "0.0" : std::to_string(subProp.xr.y())) +
-          ",xr_z=" + (isnan(subProp.xr.z()) ? "0.0" : std::to_string(subProp.xr.z())) +
-          ",area=" + (isnan(subProp.area) ? "0.0" : std::to_string(subProp.area)) +
-          ",vp_x=" + (isnan(subProp.vp.x()) ? "0.0" : std::to_string(subProp.vp.x())) +
-          ",vp_y=" + (isnan(subProp.vp.y()) ? "0.0" : std::to_string(subProp.vp.y())) +
-          ",vp_z=" + (isnan(subProp.vp.z()) ? "0.0" : std::to_string(subProp.vp.z())) +
-          ",up_x=" + (isnan(subProp.up.x()) ? "0.0" : std::to_string(subProp.up.x())) +
-          ",up_y=" + (isnan(subProp.up.y()) ? "0.0" : std::to_string(subProp.up.y())) +
-          ",up_z=" + (isnan(subProp.up.z()) ? "0.0" : std::to_string(subProp.up.z())) +
-          ",cos_theta=" + (isnan(subProp.cosTheta) ? "0.0" : std::to_string(subProp.cosTheta)) +
-          ",vn_x=" + (isnan(subProp.vn.x()) ? "0.0" : std::to_string(subProp.vn.x())) +
-          ",vn_y=" + (isnan(subProp.vn.y()) ? "0.0" : std::to_string(subProp.vn.y())) +
-          ",vn_z=" + (isnan(subProp.vn.z()) ? "0.0" : std::to_string(subProp.vn.z())) +
-          ",vt_x=" + (isnan(subProp.vt.x()) ? "0.0" : std::to_string(subProp.vt.x())) +
-          ",vt_y=" + (isnan(subProp.vt.y()) ? "0.0" : std::to_string(subProp.vt.y())) +
-          ",vt_z=" + (isnan(subProp.vt.z()) ? "0.0" : std::to_string(subProp.vt.z())) +
-          ",ut_x=" + (isnan(subProp.ut.x()) ? "0.0" : std::to_string(subProp.ut.x())) +
-          ",ut_y=" + (isnan(subProp.ut.y()) ? "0.0" : std::to_string(subProp.ut.y())) +
-          ",ut_z=" + (isnan(subProp.ut.z()) ? "0.0" : std::to_string(subProp.ut.z())) +
-          ",uf_x=" + (isnan(subProp.uf.x()) ? "0.0" : std::to_string(subProp.uf.x())) +
-          ",uf_y=" + (isnan(subProp.uf.y()) ? "0.0" : std::to_string(subProp.uf.y())) +
-          ",uf_z=" + (isnan(subProp.uf.z()) ? "0.0" : std::to_string(subProp.uf.z())) +
-          ",vf_x=" + (isnan(subProp.vf.x()) ? "0.0" : std::to_string(subProp.vf.x())) +
-          ",vf_y=" + (isnan(subProp.vf.y()) ? "0.0" : std::to_string(subProp.vf.y())) +
-          ",vf_z=" + (isnan(subProp.vf.z()) ? "0.0" : std::to_string(subProp.vf.z())) +
+          " normal_x=" + nanToZero(subProp.normal.x()) +
+          ",normal_y=" + nanToZero(subProp.normal.y()) +
+          ",normal_z=" + nanToZero(subProp.normal.z()) +
+          ",centroid_x=" + nanToZero(subProp.centroid.x()) +
+          ",centroid_y=" + nanToZero(subProp.centroid.y()) +
+          ",centroid_z=" + nanToZero(subProp.centroid.z()) +
+          ",xr_x=" + nanToZero(subProp.xr.x()) +
+          ",xr_y=" + nanToZero(subProp.xr.y()) +
+          ",xr_z=" + nanToZero(subProp.xr.z()) +
+          ",area=" + nanToZero(subProp.area) +
+          ",vp_x=" + nanToZero(subProp.vp.x()) +
+          ",vp_y=" + nanToZero(subProp.vp.y()) +
+          ",vp_z=" + nanToZero(subProp.vp.z()) +
+          ",up_x=" + nanToZero(subProp.up.x()) +
+          ",up_y=" + nanToZero(subProp.up.y()) +
+          ",up_z=" + nanToZero(subProp.up.z()) +
+          ",cos_theta=" + nanToZero(subProp.cosTheta) +
+          ",vn_x=" + nanToZero(subProp.vn.x()) +
+          ",vn_y=" + nanToZero(subProp.vn.y()) +
+          ",vn_z=" + nanToZero(subProp.vn.z()) +
+          ",vt_x=" + nanToZero(subProp.vt.x()) +
+          ",vt_y=" + nanToZero(subProp.vt.y()) +
+          ",vt_z=" + nanToZero(subProp.vt.z()) +
+          ",ut_x=" + nanToZero(subProp.ut.x()) +
+          ",ut_y=" + nanToZero(subProp.ut.y()) +
+          ",ut_z=" + nanToZero(subProp.ut.z()) +
+          ",uf_x=" + nanToZero(subProp.uf.x()) +
+          ",uf_y=" + nanToZero(subProp.uf.y()) +
+          ",uf_z=" + nanToZero(subProp.uf.z()) +
+          ",vf_x=" + nanToZero(subProp.vf.x()) +
+          ",vf_y=" + nanToZero(subProp.vf.y()) +
+          ",vf_z=" + nanToZero(subProp.vf.z()) +
           ",sim_time=" + std::to_string(currentTime) +
           " " + std::to_string(now) + "\n";
         AppendToStreamOrSend(stream, line);
@@ -1693,18 +1726,21 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
   }
 
   if (stream.str().size() > 0) {
-    if (sendto(this->influxUdpSockfd, stream.str().c_str(), stream.str().size(), 0,
-      (const struct sockaddr*)&this->influxAddr, sizeof(this->influxAddr)) < 0) {
+    if (sendto(this->influxUdpSockfd, stream.str().c_str(),
+        stream.str().size(), 0, (const struct sockaddr*)&this->influxAddr,
+        sizeof(this->influxAddr)) < 0) {
       gzerr << "Failed to send data to InfluxDB: " << strerror(errno)
         << ", Size: " << stream.str().size() << "\n";
     }
   }
 }
 
-void HydrodynamicsPrivate::AppendToStreamOrSend(std::stringstream& _stream, const std::string& _line) {
+void HydrodynamicsPrivate::AppendToStreamOrSend(std::stringstream& _stream,
+  const std::string& _line) {
   if ((_stream.str().size() + _line.size()) >= this->influxSendBuffSize) {
-    if (sendto(this->influxUdpSockfd, _stream.str().c_str(), _stream.str().size(), 0,
-      (const struct sockaddr*)&this->influxAddr, sizeof(this->influxAddr)) < 0) {
+    if (sendto(this->influxUdpSockfd, _stream.str().c_str(),
+        _stream.str().size(), 0, (const struct sockaddr*)&this->influxAddr,
+        sizeof(this->influxAddr)) < 0) {
       gzerr << "Failed to send data to InfluxDB: " << strerror(errno)
         << ", Size: " << _stream.str().size() << "\n";
     }
@@ -1721,7 +1757,8 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
   if (!this->speedThroughWaterPub) return;
   if (this->hydroData.empty()) return;
 
-  // Find the target link: use link_name if specified, otherwise the first entry.
+  // Find the target link: use link_name if specified, otherwise the first
+  // entry.
   HydrodynamicsLinkData* hd = nullptr;
   if (this->speedThroughWaterLinkName.empty())
   {
@@ -1741,7 +1778,8 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
     if (!hd)
     {
       gzwarn << "Hydrodynamics: water_current link_name ["
-             << this->speedThroughWaterLinkName << "] not found, skipping publish\n";
+             << this->speedThroughWaterLinkName
+             << "] not found, skipping publish\n";
       return;
     }
   }

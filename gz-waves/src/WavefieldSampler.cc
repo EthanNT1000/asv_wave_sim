@@ -299,8 +299,11 @@ geom::Vector3 WavefieldSampler::ComputeOrbitalVelocity(
       a * omega * depth_decay * std::sin(phase));
 
     // debug
-    // gzmsg << "k: " << k << " omega: " << omega << " a: " << a << " phi: " << phi << " dx: " << dx << " dy: " << dy << std::endl;
-    // gzmsg << "omega_t: " << omega_t << " phase: " << phase << " depth_decay: " << depth_decay << " u_horiz: " << u_horiz << std::endl;
+    // gzmsg << "k: " << k << " omega: " << omega << " a: " << a
+    //       << " phi: " << phi << " dx: " << dx << " dy: " << dy << std::endl;
+    // gzmsg << "omega_t: " << omega_t << " phase: " << phase
+    //       << " depth_decay: " << depth_decay << " u_horiz: " << u_horiz
+    //       << std::endl;
     // gzmsg << "v_orb: " << v_orb << std::endl;
   }
   return v_orb;
