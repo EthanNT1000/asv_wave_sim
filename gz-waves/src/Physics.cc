@@ -15,6 +15,8 @@
 
 #include "gz/waves/Physics.hh"
 
+#include <omp.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,6 +24,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,9 +42,6 @@
 #include "gz/waves/Utilities.hh"
 #include "gz/waves/Wavefield.hh"
 #include "gz/waves/WavefieldSampler.hh"
-
-#include <omp.h>
-#include <random>
 
 namespace gz
 {
@@ -357,7 +357,7 @@ class HydrodynamicsParametersPrivate
     vRDrag(1.0),
     foilLiftOn(true),
     cLift1(1.0),
-    alphaStall(0.26), // ~15° in radians (tune per hull)
+    alphaStall(0.26),  // ~15° in radians (tune per hull)
     cLMax(1.62193)
   {
   }
@@ -406,7 +406,7 @@ class HydrodynamicsParametersPrivate
 
   bool   foilLiftOn;
   double cLift1;      // Cl scale factor (tune per hull)
-  double alphaStall; // Stall angle of attack (rad)
+  double alphaStall;  // Stall angle of attack (rad)
   double cLMax;      // Maximum lift coefficient (tune per hull)
 
   WaterCurrentGrid water_current_grid_;
@@ -538,18 +538,30 @@ void HydrodynamicsParameters::SetFromMsg(const gz::msgs::Param_V& _msg)
   this->data->pressureDragOn = Utilities::MsgParamBool(
       _msg,  "pressure_drag_on", this->data->pressureDragOn);
 
-  this->data->cDampU1 = Utilities::MsgParamDouble(_msg, "cDampU1", this->data->cDampU1);
-  this->data->cDampU2 = Utilities::MsgParamDouble(_msg, "cDampU2", this->data->cDampU2);
-  this->data->cDampV1 = Utilities::MsgParamDouble(_msg, "cDampV1", this->data->cDampV1);
-  this->data->cDampV2 = Utilities::MsgParamDouble(_msg, "cDampV2", this->data->cDampV2);
-  this->data->cDampW1 = Utilities::MsgParamDouble(_msg, "cDampW1", this->data->cDampW1);
-  this->data->cDampW2 = Utilities::MsgParamDouble(_msg, "cDampW2", this->data->cDampW2);
-  this->data->cDampP1 = Utilities::MsgParamDouble(_msg, "cDampP1", this->data->cDampP1);
-  this->data->cDampP2 = Utilities::MsgParamDouble(_msg, "cDampP2", this->data->cDampP2);
-  this->data->cDampQ1 = Utilities::MsgParamDouble(_msg, "cDampQ1", this->data->cDampQ1);
-  this->data->cDampQ2 = Utilities::MsgParamDouble(_msg, "cDampQ2", this->data->cDampQ2);
-  this->data->cDampN1 = Utilities::MsgParamDouble(_msg, "cDampN1", this->data->cDampN1);
-  this->data->cDampN2 = Utilities::MsgParamDouble(_msg, "cDampN2", this->data->cDampN2);
+  this->data->cDampU1 = Utilities::MsgParamDouble(
+      _msg, "cDampU1", this->data->cDampU1);
+  this->data->cDampU2 = Utilities::MsgParamDouble(
+      _msg, "cDampU2", this->data->cDampU2);
+  this->data->cDampV1 = Utilities::MsgParamDouble(
+      _msg, "cDampV1", this->data->cDampV1);
+  this->data->cDampV2 = Utilities::MsgParamDouble(
+      _msg, "cDampV2", this->data->cDampV2);
+  this->data->cDampW1 = Utilities::MsgParamDouble(
+      _msg, "cDampW1", this->data->cDampW1);
+  this->data->cDampW2 = Utilities::MsgParamDouble(
+      _msg, "cDampW2", this->data->cDampW2);
+  this->data->cDampP1 = Utilities::MsgParamDouble(
+      _msg, "cDampP1", this->data->cDampP1);
+  this->data->cDampP2 = Utilities::MsgParamDouble(
+      _msg, "cDampP2", this->data->cDampP2);
+  this->data->cDampQ1 = Utilities::MsgParamDouble(
+      _msg, "cDampQ1", this->data->cDampQ1);
+  this->data->cDampQ2 = Utilities::MsgParamDouble(
+      _msg, "cDampQ2", this->data->cDampQ2);
+  this->data->cDampN1 = Utilities::MsgParamDouble(
+      _msg, "cDampN1", this->data->cDampN1);
+  this->data->cDampN2 = Utilities::MsgParamDouble(
+      _msg, "cDampN2", this->data->cDampN2);
   this->data->cPDrag1 = Utilities::MsgParamDouble(
       _msg, "cPDrag1",  this->data->cPDrag1);
   this->data->cPDrag2 = Utilities::MsgParamDouble(
@@ -587,9 +599,12 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
   if (!bin_path.empty())
     this->data->water_current_grid_.LoadFromFile(bin_path);
 
-  this->data->foilLiftOn = Utilities::SdfParamBool(_sdf, "foil_lift_on", this->data->foilLiftOn);
-  this->data->cLift1 = Utilities::SdfParamDouble(_sdf, "cLift1", this->data->cLift1);
-  this->data->alphaStall = Utilities::SdfParamDouble(_sdf, "alphaStall", this->data->alphaStall);
+  this->data->foilLiftOn = Utilities::SdfParamBool(
+      _sdf, "foil_lift_on", this->data->foilLiftOn);
+  this->data->cLift1 = Utilities::SdfParamDouble(
+      _sdf, "cLift1", this->data->cLift1);
+  this->data->alphaStall = Utilities::SdfParamDouble(
+      _sdf, "alphaStall", this->data->alphaStall);
   this->data->cLMax = Utilities::SdfParamDouble(_sdf, "cLMax",
     this->data->cLift1 * 2.0 * M_PI * std::sin(this->data->alphaStall));
 
@@ -606,18 +621,30 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
     return;
   }
 
-  this->data->cDampU1 = Utilities::SdfParamDouble(_sdf, "cDampU1", this->data->cDampU1);
-  this->data->cDampU2 = Utilities::SdfParamDouble(_sdf, "cDampU2", this->data->cDampU2);
-  this->data->cDampV1 = Utilities::SdfParamDouble(_sdf, "cDampV1", this->data->cDampV1);
-  this->data->cDampV2 = Utilities::SdfParamDouble(_sdf, "cDampV2", this->data->cDampV2);
-  this->data->cDampW1 = Utilities::SdfParamDouble(_sdf, "cDampW1", this->data->cDampW1);
-  this->data->cDampW2 = Utilities::SdfParamDouble(_sdf, "cDampW2", this->data->cDampW2);
-  this->data->cDampP1 = Utilities::SdfParamDouble(_sdf, "cDampP1", this->data->cDampP1);
-  this->data->cDampP2 = Utilities::SdfParamDouble(_sdf, "cDampP2", this->data->cDampP2);
-  this->data->cDampQ1 = Utilities::SdfParamDouble(_sdf, "cDampQ1", this->data->cDampQ1);
-  this->data->cDampQ2 = Utilities::SdfParamDouble(_sdf, "cDampQ2", this->data->cDampQ2);
-  this->data->cDampN1 = Utilities::SdfParamDouble(_sdf, "cDampN1", this->data->cDampN1);
-  this->data->cDampN2 = Utilities::SdfParamDouble(_sdf, "cDampN2", this->data->cDampN2);
+  this->data->cDampU1 = Utilities::SdfParamDouble(
+      _sdf, "cDampU1", this->data->cDampU1);
+  this->data->cDampU2 = Utilities::SdfParamDouble(
+      _sdf, "cDampU2", this->data->cDampU2);
+  this->data->cDampV1 = Utilities::SdfParamDouble(
+      _sdf, "cDampV1", this->data->cDampV1);
+  this->data->cDampV2 = Utilities::SdfParamDouble(
+      _sdf, "cDampV2", this->data->cDampV2);
+  this->data->cDampW1 = Utilities::SdfParamDouble(
+      _sdf, "cDampW1", this->data->cDampW1);
+  this->data->cDampW2 = Utilities::SdfParamDouble(
+      _sdf, "cDampW2", this->data->cDampW2);
+  this->data->cDampP1 = Utilities::SdfParamDouble(
+      _sdf, "cDampP1", this->data->cDampP1);
+  this->data->cDampP2 = Utilities::SdfParamDouble(
+      _sdf, "cDampP2", this->data->cDampP2);
+  this->data->cDampQ1 = Utilities::SdfParamDouble(
+      _sdf, "cDampQ1", this->data->cDampQ1);
+  this->data->cDampQ2 = Utilities::SdfParamDouble(
+      _sdf, "cDampQ2", this->data->cDampQ2);
+  this->data->cDampN1 = Utilities::SdfParamDouble(
+      _sdf, "cDampN1", this->data->cDampN1);
+  this->data->cDampN2 = Utilities::SdfParamDouble(
+      _sdf, "cDampN2", this->data->cDampN2);
   this->data->cPDrag1 = Utilities::SdfParamDouble(
     _sdf, "cPDrag1", this->data->cPDrag1);
   this->data->cPDrag2 = Utilities::SdfParamDouble(
@@ -637,7 +664,7 @@ void HydrodynamicsParameters::SetFromSDF(sdf::Element& _sdf)
 void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
   // Seed the random number engine using the current time
   unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
-  std::mt19937 engine(seed); // Using the Mersenne Twister 32-bit engine
+  std::mt19937 engine(seed);  // Using the Mersenne Twister 32-bit engine
 
   auto dampDist = [&](const char* minKey, const char* maxKey,
                       double defMin, double defMax) {
@@ -659,30 +686,40 @@ void HydrodynamicsParameters::SetRandomFromSDF(sdf::Element& _sdf) {
   this->data->cDampN1 = dN(engine); this->data->cDampN2 = dN(engine);
 
   std::uniform_real_distribution<double> cPDragDist(
-    Utilities::SdfParamDouble(_sdf, "cPDragDistMin", this->data->defaultCPDragDistMin),
-    Utilities::SdfParamDouble(_sdf, "cPDragDistMax", this->data->defaultCPDragDistMax));
+    Utilities::SdfParamDouble(
+        _sdf, "cPDragDistMin", this->data->defaultCPDragDistMin),
+    Utilities::SdfParamDouble(
+        _sdf, "cPDragDistMax", this->data->defaultCPDragDistMax));
   this->data->cPDrag1 = cPDragDist(engine);
   this->data->cPDrag2 = cPDragDist(engine);
 
   std::uniform_real_distribution<double> fPDragDist(
-    Utilities::SdfParamDouble(_sdf, "fPDragDistMin", this->data->defaultFPDragMin),
-    Utilities::SdfParamDouble(_sdf, "fPDragDistMax", this->data->defaultFPDragMax));
+    Utilities::SdfParamDouble(
+        _sdf, "fPDragDistMin", this->data->defaultFPDragMin),
+    Utilities::SdfParamDouble(
+        _sdf, "fPDragDistMax", this->data->defaultFPDragMax));
   this->data->fPDrag = fPDragDist(engine);
 
   std::uniform_real_distribution<double> cSDragDist(
-    Utilities::SdfParamDouble(_sdf, "cSDragDistMin", this->data->defaultCSDragMin),
-    Utilities::SdfParamDouble(_sdf, "cSDragDistMax", this->data->defaultCSDragMax));
+    Utilities::SdfParamDouble(
+        _sdf, "cSDragDistMin", this->data->defaultCSDragMin),
+    Utilities::SdfParamDouble(
+        _sdf, "cSDragDistMax", this->data->defaultCSDragMax));
   this->data->cSDrag1 = cSDragDist(engine);
   this->data->cSDrag2 = cSDragDist(engine);
 
   std::uniform_real_distribution<double> fSDragDist(
-    Utilities::SdfParamDouble(_sdf, "fSDragDistMin", this->data->defaultFSDragMin),
-    Utilities::SdfParamDouble(_sdf, "fSDragDistMax", this->data->defaultFSDragMax));
+    Utilities::SdfParamDouble(
+        _sdf, "fSDragDistMin", this->data->defaultFSDragMin),
+    Utilities::SdfParamDouble(
+        _sdf, "fSDragDistMax", this->data->defaultFSDragMax));
   this->data->fSDrag = fSDragDist(engine);
 
   std::uniform_real_distribution<double> vRDragDist(
-    Utilities::SdfParamDouble(_sdf, "vRDragDistMin", this->data->defaultVRDragMin),
-    Utilities::SdfParamDouble(_sdf, "vRDragDistMax", this->data->defaultVRDragMax));
+    Utilities::SdfParamDouble(
+        _sdf, "vRDragDistMin", this->data->defaultVRDragMin),
+    Utilities::SdfParamDouble(
+        _sdf, "vRDragDistMax", this->data->defaultVRDragMax));
   this->data->vRDrag = vRDragDist(engine);
 }
 
@@ -692,12 +729,18 @@ void HydrodynamicsParameters::DebugPrint() const
   gzmsg << "damping_on:       " << this->data->dampingOn << "\n";
   gzmsg << "viscous_drag_on:  " << this->data->viscousDragOn << "\n";
   gzmsg << "pressure_drag_on: " << this->data->pressureDragOn << "\n";
-  gzmsg << "cDampU1/U2:       " << this->data->cDampU1 << " / " << this->data->cDampU2 << "\n";
-  gzmsg << "cDampV1/V2:       " << this->data->cDampV1 << " / " << this->data->cDampV2 << "\n";
-  gzmsg << "cDampW1/W2:       " << this->data->cDampW1 << " / " << this->data->cDampW2 << "\n";
-  gzmsg << "cDampP1/P2:       " << this->data->cDampP1 << " / " << this->data->cDampP2 << "\n";
-  gzmsg << "cDampQ1/Q2:       " << this->data->cDampQ1 << " / " << this->data->cDampQ2 << "\n";
-  gzmsg << "cDampN1/N2:       " << this->data->cDampN1 << " / " << this->data->cDampN2 << "\n";
+  gzmsg << "cDampU1/U2:       " << this->data->cDampU1
+        << " / " << this->data->cDampU2 << "\n";
+  gzmsg << "cDampV1/V2:       " << this->data->cDampV1
+        << " / " << this->data->cDampV2 << "\n";
+  gzmsg << "cDampW1/W2:       " << this->data->cDampW1
+        << " / " << this->data->cDampW2 << "\n";
+  gzmsg << "cDampP1/P2:       " << this->data->cDampP1
+        << " / " << this->data->cDampP2 << "\n";
+  gzmsg << "cDampQ1/Q2:       " << this->data->cDampQ1
+        << " / " << this->data->cDampQ2 << "\n";
+  gzmsg << "cDampN1/N2:       " << this->data->cDampN1
+        << " / " << this->data->cDampN2 << "\n";
   gzmsg << "cPDrag1:          " << this->data->cPDrag1 << "\n";
   gzmsg << "cPDrag2:          " << this->data->cPDrag2 << "\n";
   gzmsg << "fPDrag:           " << this->data->fPDrag << "\n";
@@ -885,12 +928,14 @@ const std::vector<geom::Triangle>& Hydrodynamics::GetSubmergedTriangles() const
   return this->data->submergedTriangles;
 }
 
-const std::vector<TriangleProperties>& Hydrodynamics::GetTriangleProperties() const
+const std::vector<TriangleProperties>&
+Hydrodynamics::GetTriangleProperties() const
 {
   return this->data->triangleProperties;
 }
 
-const std::vector<SubmergedTriangleProperties>& Hydrodynamics::GetSubmergedTriangleProperties() const
+const std::vector<SubmergedTriangleProperties>&
+Hydrodynamics::GetSubmergedTriangleProperties() const
 {
   return this->data->submergedTriangleProperties;
 }
@@ -927,10 +972,12 @@ void Hydrodynamics::UpdateSubmergedTriangles()
   const int nFaces = static_cast<int>(geom::FaceCount(linkMesh));
   this->data->triangleProperties.resize(nFaces);
 
-  // Thread-local output buffers — threads push_back independently, merged below.
+  // Thread-local output buffers: threads push_back independently and the
+  // buffers are merged below.
   // Cap threads so that each thread gets at least 32 faces; with fewer faces
   // per thread the OpenMP barrier overhead exceeds the per-iteration work.
-  const int nThreads = std::max(1, std::min(omp_get_max_threads(), nFaces / 32));
+  const int nThreads =
+      std::max(1, std::min(omp_get_max_threads(), nFaces / 32));
 
   // Resize persistent per-thread buffers only when thread count changes, then
   // clear each step. This avoids malloc/free on every physics tick.
@@ -1023,10 +1070,12 @@ void Hydrodynamics::PopulateSubmergedTriangle(
       {
         // no-op
       } else {
-        this->SplitPartiallySubmergedTriangle1(_triProps, _subTris, _subProps, _waterlines);
+        this->SplitPartiallySubmergedTriangle1(
+            _triProps, _subTris, _subProps, _waterlines);
       }
     } else {
-      this->SplitPartiallySubmergedTriangle2(_triProps, _subTris, _subProps, _waterlines);
+      this->SplitPartiallySubmergedTriangle2(
+          _triProps, _subTris, _subProps, _waterlines);
     }
   } else {
     this->AddFullySubmergedTriangle(_triProps, _subTris, _subProps);
@@ -1250,12 +1299,14 @@ void Hydrodynamics::ComputeDynamicFoilGeometry()
 {
   // ── identify bottom triangles ─────────────────────────────────────────
   // "Bottom" = outward normal has significant upward Z component
-  // (hull bottom normals point downward into water, so outward = upward in world)
+  // (hull bottom normals point downward into water, so outward = upward
+  // in world)
   double wetted_bottom_area = 0.0;
   for (auto& props : this->data->submergedTriangleProperties)
   {
     double nz = geom::ToDouble(props.normal.z());
-    if (nz > this->data->params->BOTTOM_THRESHOLD)  // upward-facing = bottom surface
+    // upward-facing = bottom surface
+    if (nz > this->data->params->BOTTOM_THRESHOLD)
       wetted_bottom_area += props.area;
   }
 
@@ -1388,13 +1439,11 @@ void Hydrodynamics::ComputeDampingForce()
   gz::math::Vector3d forceB(
     damp(params.CDampU1(), params.CDampU2(), linB.X()),  // surge
     damp(params.CDampV1(), params.CDampV2(), linB.Y()),  // sway
-    damp(params.CDampW1(), params.CDampW2(), linB.Z())   // heave
-  );
+    damp(params.CDampW1(), params.CDampW2(), linB.Z()));  // heave
   gz::math::Vector3d torqueB(
     damp(params.CDampP1(), params.CDampP2(), angB.X()),  // roll
     damp(params.CDampQ1(), params.CDampQ2(), angB.Y()),  // pitch
-    damp(params.CDampN1(), params.CDampN2(), angB.Z())   // yaw
-  );
+    damp(params.CDampN1(), params.CDampN2(), angB.Z()));  // yaw
 
   this->data->force  += ToVector3(R.RotateVector(forceB));
   this->data->torque += ToVector3(R.RotateVector(torqueB));
@@ -1469,10 +1518,12 @@ Hydrodynamics::ComputeFoilLiftForce(
 void Hydrodynamics::ComputeAllSubmergedForces(
     const std::chrono::_V2::steady_clock::duration& simTime)
 {
-  const int n = static_cast<int>(this->data->submergedTriangleProperties.size());
+  const int n =
+      static_cast<int>(this->data->submergedTriangleProperties.size());
   if (n == 0) return;
 
-  // Resize only — every element is overwritten in the loop below, so no init needed.
+  // Resize only: every element is overwritten in the loop below, so no
+  // initialisation is needed.
   this->data->fBuoyancy.resize(n);
   this->data->cBuoyancy.resize(n);
 
@@ -1509,7 +1560,7 @@ void Hydrodynamics::ComputeAllSubmergedForces(
   double fx = 0.0, fy = 0.0, fz = 0.0;
   double tx = 0.0, ty = 0.0, tz = 0.0;
 
-#pragma omp parallel for reduction(+:fx,fy,fz,tx,ty,tz) schedule(static)
+#pragma omp parallel for reduction(+: fx, fy, fz, tx, ty, tz) schedule(static)
   for (int i = 0; i < n; ++i)
   {
     auto& props          = this->data->submergedTriangleProperties[i];
@@ -1519,7 +1570,7 @@ void Hydrodynamics::ComputeAllSubmergedForces(
     ComputePointVelocities(props, position, v_body, omega,
         wavefieldSampler, t, this->data->params->GetWaterCurrentGrid());
 
-    // ── Helper: accumulate a (force, torque) pair into the reduction scalars ──
+    // Helper: accumulate a (force, torque) pair into the reduction scalars.
     auto acc = [&](const std::pair<geom::Vector3, geom::Vector3>& ft) {
       fx += geom::ToDouble(ft.first.x());
       fy += geom::ToDouble(ft.first.y());

@@ -15,6 +15,12 @@
 
 #include "Hydrodynamics.hh"
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <omp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <cmath>
 #include <chrono>
@@ -25,8 +31,6 @@
 #include <utility>
 #include <vector>
 #include <string>
-
-#include <omp.h>
 
 #include <gz/common/MeshManager.hh>
 #include <gz/common/Profiler.hh>
@@ -66,12 +70,6 @@
 #include "gz/waves/components/Wavefield.hh"
 
 #include "Collision.hh"
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 
 namespace gz
 {
@@ -296,8 +294,8 @@ private: void UpdatePhysics(const UpdateInfo& _info,
 public: bool IsEnabled(Entity _entity,
   const EntityComponentManager& _ecm) const;
 
-      /// \brief Iterate over the links in a model, and create a CGAL SurfaceMesh
-      /// for each collison in each link.
+      /// \brief Iterate over the links in a model, and create a CGAL
+      /// SurfaceMesh for each collison in each link.
       ///
       /// \param[in]  _model    The model being processed.
       /// \param[out] _links    A vector holding a copy of pointers to
@@ -375,12 +373,14 @@ public: void DeleteUnderwaterSurfaceMarkers();
       /// \param[in] _msg Wave parameters message.
 public: void OnWaveMarkersMsg(const gz::msgs::Param& _msg);
 
-public: void PublishSpeedThroughWater(const UpdateInfo& _info, EntityComponentManager& _ecm);
+public: void PublishSpeedThroughWater(const UpdateInfo& _info,
+  EntityComponentManager& _ecm);
 
 public: void SendDataToInfluxDB(const UpdateInfo& _info,
   EntityComponentManager& _ecm);
 
-private: void AppendToStreamOrSend(std::stringstream& _stream, const std::string& _line);
+private: void AppendToStreamOrSend(std::stringstream& _stream,
+  const std::string& _line);
 
        /// \brief Name of the world
 public: std::string worldName;
@@ -541,7 +541,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
   }
 
   {
-    std::string defaultTopic = "/model/" + this->dataPtr->model.Name(_ecm) + "/speed_through_water";
+    std::string defaultTopic = "/model/" +
+      this->dataPtr->model.Name(_ecm) + "/speed_through_water";
     if (_sdf->HasElement("SpeedThroughWater")) {
       auto sdfWC = _sdf->GetElementImpl("SpeedThroughWater");
       this->dataPtr->speedThroughWaterTopicHeader =
@@ -563,9 +564,11 @@ void Hydrodynamics::Configure(const Entity& _entity,
 
   if (_sdf->HasElement("influxDBUdp")) {
     auto sdfInflux = _sdf->GetElementImpl("influxDBUdp");
-    std::string ip = waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
+    std::string ip =
+      waves::Utilities::SdfParamString(*sdfInflux, "ip", "127.0.0.1");
     int port = waves::Utilities::SdfParamDouble(*sdfInflux, "port", 8094);
-    this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(*sdfInflux, "measurement", "asv_wave_sim_triangle");
+    this->dataPtr->influxDBMeasurement = waves::Utilities::SdfParamString(
+      *sdfInflux, "measurement", "asv_wave_sim_triangle");
     this->dataPtr->influxDBUpdateRate =
       waves::Utilities::SdfParamDouble(*sdfInflux, "update_rate", 1000.0);
 
@@ -574,7 +577,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
     this->dataPtr->influxAddr.sin_port = htons(port);
 
     // Convert IP address string to binary form
-    if (inet_pton(AF_INET, ip.c_str(), &this->dataPtr->influxAddr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ip.c_str(),
+        &this->dataPtr->influxAddr.sin_addr) <= 0) {
       gzerr << "Invalid address/Address not supported" << std::endl;
       return;
     }
@@ -586,7 +590,8 @@ void Hydrodynamics::Configure(const Entity& _entity,
     }
 
     setsockopt(this->dataPtr->influxUdpSockfd, SOL_SOCKET, SO_SNDBUF,
-      &this->dataPtr->influxSendBuffSize, sizeof(this->dataPtr->influxSendBuffSize));
+      &this->dataPtr->influxSendBuffSize,
+      sizeof(this->dataPtr->influxSendBuffSize));
   }
 }
 ///////////////////////////////////////////////////
@@ -931,7 +936,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
 
       // Update hydrodynamics
       hd->hydrodynamics[j]->Update(
-        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity, _info.simTime);
+        hd->wavefieldSampler, linkCoMPose, linVelocity, angVelocity,
+        _info.simTime);
 
       // Apply forces to the Link
       auto force = waves::ToGz(hd->hydrodynamics[j]->Force());
@@ -981,7 +987,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
         double fx = 0.0, fy = 0.0, fz = 0.0;
         double tx = 0.0, ty = 0.0, tz = 0.0;
 
-        #pragma omp parallel for reduction(+:fx,fy,fz,tx,ty,tz) schedule(static)
+        #pragma omp parallel for reduction(+: fx, fy, fz, tx, ty, tz) \
+            schedule(static)
         for (int ti = 0; ti < nTris; ++ti)
         {
           const auto& tri = tris[ti];
@@ -991,9 +998,12 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
           // For fully above-water faces PopulateSubmergedTriangle returns
           // early leaving subArea as NaN — handle each case explicitly.
           double areaAbove;
-          if      (tri.hh <= 0.0) continue;                          // fully submerged
-          else if (tri.hl  > 0.0) areaAbove = tri.area;              // fully above
-          else                    areaAbove = tri.area - tri.subArea; // partial
+          if (tri.hh <= 0.0)
+            continue;  // fully submerged
+          else if (tri.hl > 0.0)
+            areaAbove = tri.area;  // fully above
+          else
+            areaAbove = tri.area - tri.subArea;  // partial
 
           if (areaAbove < 1e-9) continue;
 
@@ -1035,7 +1045,8 @@ void HydrodynamicsPrivate::UpdatePhysics(const UpdateInfo& _info,
         if (aeroForceSum.IsFinite())
           hd->link.AddWorldForce(_ecm, aeroForceSum);
         if (aeroTorqueSum.IsFinite())
-          hd->link.AddWorldWrench(_ecm, gz::math::Vector3d::Zero, aeroTorqueSum);
+          hd->link.AddWorldWrench(
+              _ecm, gz::math::Vector3d::Zero, aeroTorqueSum);
       }
 
       // Info for Markers
@@ -1449,7 +1460,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitWaterPatchMarkers(_ecm);
 
     this->UpdateWaterPatchMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteWaterPatch)
     {
@@ -1464,7 +1476,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitWaterlineMarkers(_ecm);
 
     this->UpdateWaterlineMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteWaterline)
     {
@@ -1479,7 +1492,8 @@ void HydrodynamicsPrivate::UpdateMarkers(
       this->InitUnderwaterSurfaceMarkers(_ecm);
 
     this->UpdateUnderwaterSurfaceMarkers();
-  } else
+  }
+  else
   {
     if (this->shouldDeleteUnderwaterSurface)
     {
@@ -1657,7 +1671,8 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
       }
 
       index = 0;
-      for (auto&& subProp : hd->hydrodynamics[j]->GetSubmergedTriangleProperties()) {
+      for (auto&& subProp :
+          hd->hydrodynamics[j]->GetSubmergedTriangleProperties()) {
         std::string line = influxDBMeasurement + "_submerged_triangle,link=" +
           _ecm.Component<gz::sim::components::Name>(hd->link.Entity())->Data() +
           ",index=" + std::to_string(index++) +
@@ -1701,18 +1716,21 @@ void HydrodynamicsPrivate::SendDataToInfluxDB(const UpdateInfo& _info,
   }
 
   if (stream.str().size() > 0) {
-    if (sendto(this->influxUdpSockfd, stream.str().c_str(), stream.str().size(), 0,
-      (const struct sockaddr*)&this->influxAddr, sizeof(this->influxAddr)) < 0) {
+    if (sendto(this->influxUdpSockfd, stream.str().c_str(),
+        stream.str().size(), 0, (const struct sockaddr*)&this->influxAddr,
+        sizeof(this->influxAddr)) < 0) {
       gzerr << "Failed to send data to InfluxDB: " << strerror(errno)
         << ", Size: " << stream.str().size() << "\n";
     }
   }
 }
 
-void HydrodynamicsPrivate::AppendToStreamOrSend(std::stringstream& _stream, const std::string& _line) {
+void HydrodynamicsPrivate::AppendToStreamOrSend(std::stringstream& _stream,
+  const std::string& _line) {
   if ((_stream.str().size() + _line.size()) >= this->influxSendBuffSize) {
-    if (sendto(this->influxUdpSockfd, _stream.str().c_str(), _stream.str().size(), 0,
-      (const struct sockaddr*)&this->influxAddr, sizeof(this->influxAddr)) < 0) {
+    if (sendto(this->influxUdpSockfd, _stream.str().c_str(),
+        _stream.str().size(), 0, (const struct sockaddr*)&this->influxAddr,
+        sizeof(this->influxAddr)) < 0) {
       gzerr << "Failed to send data to InfluxDB: " << strerror(errno)
         << ", Size: " << _stream.str().size() << "\n";
     }
@@ -1729,7 +1747,8 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
   if (!this->speedThroughWaterPub) return;
   if (this->hydroData.empty()) return;
 
-  // Find the target link: use link_name if specified, otherwise the first entry.
+  // Find the target link: use link_name if specified, otherwise the first
+  // entry.
   HydrodynamicsLinkData* hd = nullptr;
   if (this->speedThroughWaterLinkName.empty())
   {
@@ -1749,7 +1768,8 @@ void HydrodynamicsPrivate::PublishSpeedThroughWater(
     if (!hd)
     {
       gzwarn << "Hydrodynamics: water_current link_name ["
-             << this->speedThroughWaterLinkName << "] not found, skipping publish\n";
+             << this->speedThroughWaterLinkName
+             << "] not found, skipping publish\n";
       return;
     }
   }
