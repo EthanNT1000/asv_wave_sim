@@ -37,7 +37,6 @@ set(sources
 set(gtest_sources
   ${gtest_sources}
   Algorithm_TEST.cc
-  CGAL_TEST.cc
   EigenFFTW_TEST.cc
   Geometry_TEST.cc
   Grid_TEST.cc
@@ -68,12 +67,6 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     OpenMP::OpenMP_CXX
     embree
 )
-if (${CGAL_VERSION_MAJOR} GREATER_EQUAL 6)
-  target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
-    PUBLIC
-    CGAL::CGAL
-  )
-endif()
 if (UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     PRIVATE stdc++fs)

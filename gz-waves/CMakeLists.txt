@@ -298,23 +298,6 @@ endif()
 find_package(Eigen3 REQUIRED)
 
 #--------------------------------------
-# CGAL and its components...
-
-find_package(CGAL REQUIRED COMPONENTS Core)
-
-if(NOT CGAL_FOUND)
-  message(STATUS "This project requires the CGAL library, and will not be compiled.")
-  return()
-endif()
-
-message("CGAL_VERSION_MAJOR: ${CGAL_VERSION_MAJOR}")
-
-if (${CGAL_VERSION_MAJOR} LESS 6)
-  # include helper file
-  include(${CGAL_USE_FILE})
-endif()
-
-#--------------------------------------
 # Embree (Apache-2.0): ray / mesh intersection queries (geom::RayMeshQuery).
 # Embree 4 is preferred; the 3.x API is also supported.
 find_package(embree 4 QUIET)
