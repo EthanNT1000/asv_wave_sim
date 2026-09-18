@@ -27,16 +27,6 @@
 
 namespace geom = gz::waves::geom;
 
-namespace cgal
-{
-using gz::waves::geom::RayMeshQuery;
-using gz::waves::geom::Direction3;
-using gz::waves::geom::Mesh;
-using gz::waves::geom::Point3;
-using gz::waves::geom::Triangle;
-using gz::waves::geom::Vector3;
-}  // namespace cgal
-
 namespace waves
 {
 using gz::waves::Grid;

@@ -30,11 +30,6 @@
 
 namespace geom = gz::waves::geom;
 
-namespace cgal
-{
-using gz::waves::geom::Point3;
-}  // namespace cgal
-
 using gz::waves::Index;
 using gz::waves::Point3Range;
 using gz::waves::TriangulatedGrid;

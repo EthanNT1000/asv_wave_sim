@@ -26,12 +26,6 @@
 
 namespace geom = gz::waves::geom;
 
-namespace cgal
-{
-using gz::waves::geom::Direction3;
-using gz::waves::geom::Point3;
-}  // namespace cgal
-
 using gz::waves::Index;
 using gz::waves::Grid;
 using gz::waves::GridTools;

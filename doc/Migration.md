@@ -70,8 +70,8 @@ facade in `gz-waves/include/gz/waves/geom/`:
 - `geom/Mesh.hh`: index-based mesh access.
 - `geom/RayMeshQuery.hh`: first-hit ray / mesh queries (Embree).
 
-The historical `gz::cgal::*` type names in `CGALTypes.hh` are aliases of the
-`geom` types and remain valid. `TriangulatedGrid` locates tile triangles with
+The historical `gz::cgal::*` type names and `CGALTypes.hh` have been removed;
+use the `geom` types. `TriangulatedGrid` locates tile triangles with
 lattice index arithmetic instead of a constrained Delaunay triangulation.
 See `docs/cgal_audit.md` for the audit that motivated the change and
 `tests/geom/test_geom_baseline.py` for the golden values that pin behaviour.
