@@ -15,6 +15,8 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -197,7 +199,8 @@ TEST(Hydrodynamics, BuoyancyUnitBox)
       std::make_shared<HydrodynamicsParameters>();
   Hydrodynamics hydrodynamics(hydroParams, linkMesh, wavefieldSampler);
   hydrodynamics.Update(wavefieldSampler, linkPose,
-      CGAL::NULL_VECTOR, CGAL::NULL_VECTOR);
+      CGAL::NULL_VECTOR, CGAL::NULL_VECTOR,
+      std::chrono::steady_clock::duration::zero());
   cgal::Vector3 force = hydrodynamics.Force();
 
   double h = 0.5;
@@ -238,7 +241,8 @@ TEST(Hydrodynamics, Buoyancy10x4x2Box)
       std::make_shared<HydrodynamicsParameters>();
   Hydrodynamics hydrodynamics(hydroParams, linkMesh, wavefieldSampler);
   hydrodynamics.Update(wavefieldSampler, linkPose,
-      CGAL::NULL_VECTOR, CGAL::NULL_VECTOR);
+      CGAL::NULL_VECTOR, CGAL::NULL_VECTOR,
+      std::chrono::steady_clock::duration::zero());
   cgal::Vector3 force =  hydrodynamics.Force();
   double h = 0.5 * 2.0;
   double A = 10.0 * 4.0;
