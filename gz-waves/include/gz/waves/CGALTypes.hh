@@ -19,16 +19,6 @@
 #ifndef GZ_WAVES_CGALTYPES_HH_
 #define GZ_WAVES_CGALTYPES_HH_
 
-#include <CGAL/AABB_face_graph_triangle_primitive.h>
-#ifndef CGAL_VERSION_MAJOR
-#error
-#endif
-#if CGAL_VERSION_MAJOR >= 6
-#include <CGAL/AABB_traits_3.h>
-#else
-#include <CGAL/AABB_traits.h>
-#endif
-#include <CGAL/AABB_tree.h>
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Surface_mesh.h>
 
@@ -36,6 +26,16 @@
 
 namespace gz
 {
+namespace waves
+{
+namespace geom
+{
+class RayMeshQuery;
+}  // namespace geom
+}  // namespace waves
+
+/// \brief Compatibility aliases. New code uses gz::waves::geom (see
+/// geom/Types.hh); these names are kept so existing signatures compile.
 namespace cgal
 {
 //////////////////////////////////////////////////
@@ -59,13 +59,7 @@ typedef Mesh::Halfedge_index            HalfedgeIndex;
 typedef Mesh::Vertex_index              VertexIndex;
 
 // AABB Tree
-typedef CGAL::AABB_face_graph_triangle_primitive<Mesh> Primitive;
-#if CGAL_VERSION_MAJOR >= 6
-typedef CGAL::AABB_traits_3<Kernel, Primitive> Traits;
-#else
-typedef CGAL::AABB_traits<Kernel, Primitive> Traits;
-#endif
-typedef CGAL::AABB_tree<Traits> AABBTree;
+typedef gz::waves::geom::RayMeshQuery AABBTree;
 
 // Pointers
 typedef std::shared_ptr<Mesh>           MeshPtr;

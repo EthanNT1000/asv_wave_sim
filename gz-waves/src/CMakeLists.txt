@@ -9,6 +9,7 @@ add_subdirectory(systems)
 
 set(sources
   Algorithm.cc
+  geom/RayMeshQuery.cc
   Convert.cc
   Geometry.cc
   Grid.cc
