@@ -27,6 +27,7 @@ ExternalProject_Add(
 )
 
 add_subdirectory(gtest_vendor)
+add_subdirectory(fft)
 add_subdirectory(geom)
 # add_subdirectory(integration)
 add_subdirectory(performance)
