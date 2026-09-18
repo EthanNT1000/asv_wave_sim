@@ -16,8 +16,8 @@
 /// \file CGALTypes.hh
 /// \brief Compatibility aliases for the historical gz::cgal type names.
 ///
-/// New code uses gz::waves::geom (geom/Types.hh). These aliases keep the
-/// existing public signatures valid.
+/// CGAL is no longer used. New code uses gz::waves::geom (geom/Types.hh);
+/// these aliases keep the existing public signatures valid.
 
 #ifndef GZ_WAVES_CGALTYPES_HH_
 #define GZ_WAVES_CGALTYPES_HH_
@@ -38,7 +38,6 @@ class RayMeshQuery;
 
 namespace cgal
 {
-typedef gz::waves::geom::detail::CgalKernel  Kernel;
 typedef gz::waves::geom::Direction3          Direction3;
 typedef gz::waves::geom::Point3              Point3;
 typedef gz::waves::geom::Line                Line;
@@ -49,7 +48,6 @@ typedef gz::waves::geom::Vector3             Vector3;
 
 typedef gz::waves::geom::Mesh                Mesh;
 typedef gz::waves::geom::FaceIndex           FaceIndex;
-typedef Mesh::Halfedge_index                 HalfedgeIndex;
 typedef gz::waves::geom::VertexIndex         VertexIndex;
 typedef gz::waves::geom::RayMeshQuery        AABBTree;
 typedef gz::waves::geom::MeshPtr             MeshPtr;

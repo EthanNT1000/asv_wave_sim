@@ -21,22 +21,19 @@
 /// library directly; it uses these aliases and the free functions in
 /// geom/Vector.hh, geom/Mesh.hh and geom/RayMeshQuery.hh.
 ///
-/// Phase 2 of the CGAL removal (docs/cgal_audit.md): points and vectors are
-/// Eigen (MPL-2.0) fixed-size vectors; Direction3, Line and Triangle are
-/// small value types defined here. The mesh container is still a CGAL
-/// Surface_mesh until Phase 4; geom/Mesh.hh converts at that boundary.
+/// Points and vectors are Eigen (MPL-2.0) fixed-size vectors; Direction3,
+/// Line, Ray, Triangle and Mesh are small value types defined here.
 
 #ifndef GZ_WAVES_GEOM_TYPES_HH_
 #define GZ_WAVES_GEOM_TYPES_HH_
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <vector>
 
 #include <Eigen/Core>
-
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/Surface_mesh.h>
 
 namespace gz
 {
@@ -128,19 +125,52 @@ inline std::ostream& operator<<(std::ostream& os, const Triangle& t)
             << "], [" << t[2].transpose() << "]";
 }
 
-namespace detail
-{
-/// \brief The CGAL kernel used only by the mesh container and the ray query
-/// backend until Phase 4 / Phase 3 replace them.
-typedef CGAL::Simple_cartesian<double>  CgalKernel;
-typedef CgalKernel::Point_3             CgalPoint3;
-}  // namespace detail
+/// \brief Vertex and face indices are plain integers.
+typedef Index VertexIndex;
+typedef Index FaceIndex;
 
-/// \brief Indexed triangle mesh (vertex array + faces of three vertices).
-typedef CGAL::Surface_mesh<detail::CgalPoint3> Mesh;
-typedef std::shared_ptr<Mesh>           MeshPtr;
-typedef Mesh::Vertex_index              VertexIndex;
-typedef Mesh::Face_index                FaceIndex;
+/// \brief Indexed triangle mesh: a vertex array and faces of three vertex
+/// indices. Indices are stable (0..N-1, no deletions), which is all the
+/// library relies on. Access it through the functions in geom/Mesh.hh.
+class Mesh
+{
+ public:
+  typedef std::array<Index, 3> Face;
+
+  Index AddVertex(const Point3& p)
+  {
+    vertices_.push_back(p);
+    return static_cast<Index>(vertices_.size()) - 1;
+  }
+
+  Index AddFace(Index i0, Index i1, Index i2)
+  {
+    faces_.push_back({i0, i1, i2});
+    return static_cast<Index>(faces_.size()) - 1;
+  }
+
+  Index VertexCount() const { return static_cast<Index>(vertices_.size()); }
+  Index FaceCount() const { return static_cast<Index>(faces_.size()); }
+
+  const Point3& Point(Index i) const { return vertices_[i]; }
+  Point3& Point(Index i) { return vertices_[i]; }
+  const Face& FaceAt(Index f) const { return faces_[f]; }
+
+  const std::vector<Point3>& Vertices() const { return vertices_; }
+  const std::vector<Face>& Faces() const { return faces_; }
+
+  void Reserve(Index nVertices, Index nFaces)
+  {
+    vertices_.reserve(nVertices);
+    faces_.reserve(nFaces);
+  }
+
+ private:
+  std::vector<Point3> vertices_;
+  std::vector<Face> faces_;
+};
+
+typedef std::shared_ptr<Mesh> MeshPtr;
 
 }  // namespace geom
 }  // namespace waves

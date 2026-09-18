@@ -112,7 +112,7 @@ class RayMeshQueryPrivate
     faces.reserve(nF);
     for (Index f = 0; f < nF; ++f)
     {
-      const auto v = FaceVertices(_mesh, f);
+      const auto& v = FaceVertices(_mesh, f);
       ib[3 * f + 0] = static_cast<unsigned>(v[0]);
       ib[3 * f + 1] = static_cast<unsigned>(v[1]);
       ib[3 * f + 2] = static_cast<unsigned>(v[2]);
