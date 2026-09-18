@@ -18,7 +18,7 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 
 - A working installation of [Gazebo Garden](https://gazebosim.org/docs/garden) or later including development symbols.
 
-- The simulation uses the [CGAL](https://www.cgal.org/) library for mesh manipulation and [FFTW](http://www.fftw.org/) to compute Fourier transforms. Both libraries are licensed GPL-3.0.
+- The simulation uses [Eigen](https://eigen.tuxfamily.org/) (MPL-2.0) for geometry, [Embree](https://www.embree.org/) (Apache-2.0) for ray / mesh intersection queries and [FFTW](http://www.fftw.org/) (GPL-3.0) to compute Fourier transforms. CGAL is no longer required (see `docs/cgal_audit.md`).
 
 - [OpenMP](https://www.openmp.org/) is used to parallelise wave mesh updates, hydrodynamics force calculations, and FFT execution across multiple CPU cores.
 
@@ -29,11 +29,11 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 - Ubuntu 22.04 (Jammy)
 - Gazebo Sim, version 7.1.0 (Garden)
 
-Install CGAL and FFTW:
+Install Eigen, Embree and FFTW:
 
 ```zsh
 sudo apt-get update
-sudo apt-get install libcgal-dev libfftw3-dev
+sudo apt-get install libeigen3-dev libembree-dev libfftw3-dev
 ```
 
 ### OpenMP (Ubuntu)
@@ -65,11 +65,11 @@ ls /usr/lib/x86_64-linux-gnu/libfftw3_omp*
 - macOS 12.6 (Monterey)
 - Gazebo Sim, version 7.1.0 (Garden)
 
-Install CGAL and FFTW:
+Install Eigen, Embree and FFTW:
 
 ```zsh
 brew update
-brew install cgal fftw
+brew install eigen embree fftw
 ```
 
 ### OpenMP (macOS)
@@ -593,7 +593,7 @@ This project makes use of other open source software, for full details see the f
 ## Acknowledgments
 
 - Jacques Kerner's two part blog describing boat physics for games: [Water interaction model for boats in video games](https://www.gamasutra.com/view/news/237528/Water_interaction_model_for_boats_in_video_games.php) and [Water interaction model for boats in video games: Part 2](https://www.gamasutra.com/view/news/263237/Water_interaction_model_for_boats_in_video_games_Part_2.php).
-- The [CGAL](https://doc.cgal.org) libraries are used for the wave field and model meshes.
+- The [CGAL](https://doc.cgal.org) libraries were used for the wave field and model meshes in earlier versions; the geometry now uses [Eigen](https://eigen.tuxfamily.org/) and [Embree](https://www.embree.org/).
 - The [UUV Simulator](https://github.com/uuvsimulator/uuv_simulator) package for the orginal vertex shaders used in the wave field visuals.
 - The [VMRC](https://bitbucket.org/osrf/vmrc) package for textures and meshes used in the wave field visuals.
 - Jerry Tessendorf's paper on	[Simulating Ocean Water](https://people.cs.clemson.edu/~jtessen/reports/papers_files/coursenotes2004.pdf)
