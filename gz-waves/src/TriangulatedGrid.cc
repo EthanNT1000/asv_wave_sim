@@ -15,34 +15,36 @@
 
 #include "gz/waves/TriangulatedGrid.hh"
 
-#include <CGAL/Simple_cartesian.h>
-#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/Constrained_Delaunay_triangulation_2.h>
-#include <CGAL/Constrained_triangulation_2.h>
-#include <CGAL/Projection_traits_xy_3.h>
-#include <CGAL/Regular_triangulation_2.h>
-#include <CGAL/Timer.h>
-#include <CGAL/Triangulation_2.h>
-#include <CGAL/Triangulation_face_base_with_info_2.h>
-#include <CGAL/Triangulation_hierarchy_2.h>
-#include <CGAL/Triangulation_vertex_base_with_info_2.h>
-
-#include <CGAL/algorithm.h>
-#include <CGAL/point_generators_2.h>
-
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "gz/waves/Geometry.hh"
+#include "gz/waves/geom/Geom.hh"
 
 namespace gz
 {
 namespace waves
 {
 
-//////////////////////////////////////////////////
+/// \internal
+/// Regular-lattice implementation (Phase 1 of the CGAL removal, see
+/// docs/cgal_audit.md Sec. 3).
+///
+/// The tile is an (nx+1) x (ny+1) lattice with cell size (lx/nx, ly/ny) whose
+/// cells are split by the idx0-idx2 diagonal. Point location is index
+/// arithmetic on the undisplaced lattice followed by a ray/triangle test on
+/// the *current* vertex positions, expanding cell by cell in a ring around the
+/// guessed cell. The ring search is required because the wave simulations
+/// displace the vertices horizontally (Gerstner / FFT choppiness), so the
+/// triangle containing a query may be the neighbour of the lattice cell that
+/// contains it. The located triangle and the height computed from it are the
+/// same as the constrained Delaunay triangulation previously used, because the
+/// triangulation faces were exactly the lattice cells split by the constrained
+/// diagonal.
 class TriangulatedGrid::Private {
  public:
   ~Private();
@@ -66,26 +68,26 @@ class TriangulatedGrid::Private {
   void DebugPrintTriangulation() const;
   void UpdatePoints(const std::vector<geom::Point3>& points);
   void UpdatePoints(const std::vector<gz::math::Vector3d>& from);
-
-  // void UpdatePoints(const std::vector<Ogre::Vector3>& from);
   void UpdatePoints(const geom::Mesh& from);
 
-  // Type definitions - use a consistent Kernel
-  // typedef Kernel Kernel;
-  // typedef CGAL::Simple_cartesian<double> Kernel;
-  // typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
-  typedef CGAL::Projection_traits_xy_3<cgal::Kernel> Gt;
-  typedef CGAL::Triangulation_vertex_base_with_info_2<int64_t, Gt> Vbb;
-  typedef CGAL::Triangulation_hierarchy_vertex_base_2<Vbb> Vb;
-  typedef CGAL::Constrained_triangulation_face_base_2<Gt> Fbb;
-  typedef CGAL::Triangulation_face_base_with_info_2<int64_t, Gt, Fbb> Fb;
-  typedef CGAL::Triangulation_data_structure_2<Vb, Fb> Tds;
-  typedef CGAL::No_constraint_intersection_tag Itag;
-  typedef CGAL::Constrained_Delaunay_triangulation_2<Gt, Tds, Itag> Tb;
-  typedef CGAL::Triangulation_hierarchy_2<Tb> Triangulation;
-  typedef Triangulation::Vertex_handle Vertex_handle;
-  typedef Triangulation::Face_handle Face_handle;
-  typedef Triangulation::Face Face;
+  /// \brief Locate the triangle containing the xy of query and intersect
+  /// the vertical line through query with it.
+  ///
+  /// \param[in] query      Query point.
+  /// \param[in, out] hint  Face index to try first (-1 for none); set to the
+  ///                       found face on success.
+  /// \param[out] intersection The point on the surface above/below query.
+  /// \return true if a containing triangle was found.
+  bool LocateAndIntersect(const geom::Point3& query, int64_t& hint,
+      geom::Point3& intersection) const;
+
+  /// \brief Test the two triangles of cell (ix, iy).
+  bool IntersectCell(Index ix, Index iy, const geom::Point3& query,
+      int64_t& faceIndex, geom::Point3& intersection) const;
+
+  /// \brief Test one triangle.
+  bool IntersectFace(int64_t faceIndex, const geom::Point3& query,
+      geom::Point3& intersection) const;
 
   // Dimensions
   Index nx_;
@@ -99,21 +101,15 @@ class TriangulatedGrid::Private {
   std::vector<geom::Point3> points_;
   std::vector<Index3> indices_;
   std::vector<Index3> infinite_indices_;
-
-  // Triangulation / Triangulation Hierarchy
-  Triangulation       tri_;
 };
 
-//////////////////////////////////////////////////
 TriangulatedGrid::Private::~Private() {
 }
 
-//////////////////////////////////////////////////
 TriangulatedGrid::Private::Private(Index nx, Index ny, double lx, double ly) :
   nx_(nx), ny_(ny), lx_(lx), ly_(ly), origin_(geom::Origin()) {
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::CreateMesh() {
   double dlx = lx_ / nx_;
   double dly = ly_ / ny_;
@@ -171,168 +167,130 @@ void TriangulatedGrid::Private::CreateMesh() {
   }
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::CreateTriangulation() {
-  // Insert points - NOTE: must insert the points to build the
-  // triangulation hierarchy.
-  // CGAL::Timer timer;
-
-  // Point with info
-  // std::vector<std::pair<geom::Point3, int64_t>> pointsWithInfo;
-  // for (int64_t i=0; i<points_.size(); ++i) {
-  //   pointsWithInfo.push_back(std::make_pair(points_[i], i));
-  // }
-
-  // timer.start();
-  // @NOTE insert poinst with info not compiling for a triangulation hierarcy.
-  // See below.
-  // tri_.insert(pointsWithInfo.begin(), pointsWithInfo.end());
-  tri_.insert(points_.begin(), points_.end());
-  // timer.stop();
-  // std::cout << "insert points: " << timer.time() << " s" << "\n";
-
-  // Set vertex info
-  // @NOTE - use this work around because the insert for points with info
-  // does not compile for a triangulation hierarchy.
-  // timer.reset();
-  // timer.start();
-  Face_handle fh;
-  for (uint64_t i=0; i < points_.size(); ++i) {
-    auto vh = tri_.insert(points_[i], fh);
-    if (vh != nullptr) {
-      vh->info() = i;
-    }
-  }
-  // timer.stop();
-  // std::cout << "set vertex info: " << timer.time() << " s" << "\n";
-
-  // Constraint indices
-  const Index nx_plus1 = nx_ + 1;
-  std::vector<std::pair < size_t, int64_t>> cindices;
-  for (int64_t iy=0; iy < ny_; ++iy) {
-    for (int64_t ix=0; ix < nx_; ++ix) {
-      int64_t idx1 = iy * nx_plus1 + ix;
-      int64_t idx2 = (iy + 1) * nx_plus1 + (ix + 1);
-      cindices.push_back(std::make_pair(idx1, idx2));
-    }
-  }
-
-  // Insert constraints
-  // timer.reset();
-  // timer.start();
-  tri_.insert_constraints(points_.begin(), points_.end(),
-      cindices.begin(), cindices.end());
-  // timer.stop();
-  // std::cout << "insert constraints: " << timer.time() << " s" << "\n";
-
-  // Set info on infinite vertex
-  tri_.infinite_vertex()->info() = -1;
-
-  // Face list mapping
-
-  // Initialise face info
-  // timer.reset();
-  // timer.start();
-  for (auto f = tri_.all_faces_begin(); f != tri_.all_faces_end(); ++f) {
-    f->info() = -1;
-  }
-  // timer.stop();
-  // std::cout << "initialise face info: (" << timer.time() << " s)" << "\n";
-
-  // Face matching
-  fh = nullptr;
-  int64_t idx = 0;
-  // timer.reset();
-  // timer.start();
-  for (auto f = indices_.begin(); f != indices_.end(); ++f, ++idx) {
-    // Compute the centroid of f and locate the tri_ face containing this point.
-    auto& p0 = points_[f->at(0)];
-    auto& p1 = points_[f->at(1)];
-    auto& p2 = points_[f->at(2)];
-    geom::Point3 p(
-      (p0.x() + p1.x() + p2.x())/3.0,
-      (p0.y() + p1.y() + p2.y())/3.0,
-      0.0);
-    fh = tri_.locate(p, fh);
-
-    // Set the info value on the found face.
-    if (fh != nullptr)
-    {
-      fh->info() = idx;
-    }
-  }
-  // timer.stop();
-  // std::cout << "face mapping: (" << timer.time() << " s)" << "\n";
+  // The lattice connectivity built in CreateMesh is the triangulation:
+  // face 2*(iy*nx + ix) + k is triangle k of cell (ix, iy). Nothing to build.
 }
 
-//////////////////////////////////////////////////
-bool TriangulatedGrid::Private::Locate(
-    const geom::Point3& query, int64_t& faceIndex) const {
-  auto fh = tri_.locate(query);
-  if (fh != nullptr) {
-    faceIndex = fh->info();
+bool TriangulatedGrid::Private::IntersectFace(int64_t faceIndex,
+    const geom::Point3& query, geom::Point3& intersection) const {
+  const Index3& f = indices_[faceIndex];
+  const geom::Direction3 direction(0, 0, 1);
+  return Geometry::LineIntersectsTriangle(query, direction,
+      points_[f[0]], points_[f[1]], points_[f[2]], intersection);
+}
+
+bool TriangulatedGrid::Private::IntersectCell(Index ix, Index iy,
+    const geom::Point3& query, int64_t& faceIndex,
+    geom::Point3& intersection) const {
+  const int64_t f0 = 2 * (iy * nx_ + ix);
+  if (IntersectFace(f0, query, intersection)) {
+    faceIndex = f0;
+    return true;
+  }
+  if (IntersectFace(f0 + 1, query, intersection)) {
+    faceIndex = f0 + 1;
     return true;
   }
   return false;
 }
 
-//////////////////////////////////////////////////
+bool TriangulatedGrid::Private::LocateAndIntersect(const geom::Point3& query,
+    int64_t& hint, geom::Point3& intersection) const {
+  if (indices_.empty())
+    return false;
+
+  // Hint from the previous query (spatially coherent queries).
+  if (hint >= 0 && hint < static_cast<int64_t>(indices_.size()) &&
+      IntersectFace(hint, query, intersection)) {
+    return true;
+  }
+
+  // Index math on the undisplaced lattice: cell containing the query xy.
+  const double dlx = lx_ / nx_;
+  const double dly = ly_ / ny_;
+  const double x0 = origin_.x() - lx_ / 2.0;
+  const double y0 = origin_.y() - ly_ / 2.0;
+  Index ix = static_cast<Index>(std::floor((query.x() - x0) / dlx));
+  Index iy = static_cast<Index>(std::floor((query.y() - y0) / dly));
+  ix = std::min(std::max<Index>(ix, 0), nx_ - 1);
+  iy = std::min(std::max<Index>(iy, 0), ny_ - 1);
+
+  int64_t face = -1;
+  if (IntersectCell(ix, iy, query, face, intersection)) {
+    hint = face;
+    return true;
+  }
+
+  // Expand in rings around the guessed cell. The horizontal displacement of
+  // the wave vertices is bounded by the wave steepness, so in practice the
+  // containing triangle is found within one or two rings; the loop
+  // nevertheless covers the whole tile so a query is never missed while some
+  // triangle contains it.
+  const Index maxRing = std::max(nx_, ny_);
+  for (Index r = 1; r <= maxRing; ++r) {
+    const Index ixm = ix - r, ixp = ix + r, iym = iy - r, iyp = iy + r;
+    if (ixm < 0 && ixp >= nx_ && iym < 0 && iyp >= ny_)
+      break;
+    // bottom and top rows of the ring
+    for (Index i = std::max<Index>(ixm, 0); i <= std::min<Index>(ixp, nx_ - 1); ++i) {
+      if (iym >= 0 && IntersectCell(i, iym, query, face, intersection)) {
+        hint = face; return true;
+      }
+      if (iyp < ny_ && IntersectCell(i, iyp, query, face, intersection)) {
+        hint = face; return true;
+      }
+    }
+    // left and right columns (excluding corners already visited)
+    for (Index j = std::max<Index>(iym + 1, 0); j <= std::min<Index>(iyp - 1, ny_ - 1); ++j) {
+      if (ixm >= 0 && IntersectCell(ixm, j, query, face, intersection)) {
+        hint = face; return true;
+      }
+      if (ixp < nx_ && IntersectCell(ixp, j, query, face, intersection)) {
+        hint = face; return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool TriangulatedGrid::Private::Locate(
+    const geom::Point3& query, int64_t& faceIndex) const {
+  int64_t hint = -1;
+  geom::Point3 intersection(query);
+  if (LocateAndIntersect(query, hint, intersection)) {
+    faceIndex = hint;
+    return true;
+  }
+  return false;
+}
+
 bool TriangulatedGrid::Private::Height(
     const geom::Point3& query, double& height) const {
-  bool found = false;
   height = 0.0;
-  auto fh = tri_.locate(query);
-  if (fh != nullptr) {
-    // Triangle vertices
-    const auto& p0 = fh->vertex(0)->point();
-    const auto& p1 = fh->vertex(1)->point();
-    const auto& p2 = fh->vertex(2)->point();
-
-    // Height query
-    const geom::Direction3 direction(0, 0, 1);
-    geom::Point3 intersection(query);
-    geom::Triangle triangle(p0, p1, p2);
-
-    found = Geometry::LineIntersectsTriangle(
-        query, direction, triangle, intersection);
-
-    if (found) {
-      height = intersection.z() - query.z();
-    }
+  int64_t hint = -1;
+  geom::Point3 intersection(query);
+  bool found = LocateAndIntersect(query, hint, intersection);
+  if (found) {
+    height = intersection.z() - query.z();
   }
   return found;
 }
 
-//////////////////////////////////////////////////
 bool TriangulatedGrid::Private::Height(
     const std::vector<geom::Point3>& queries,
     std::vector<double>& heights) const
 {
   bool foundAll = true;
-  Face_handle fh = nullptr;
+  int64_t hint = -1;
   for (uint64_t i=0; i < heights.size(); ++i)
   {
     double height_i = 0.0;
     const geom::Point3& query = queries[i];
-    fh = tri_.locate(query, fh);
-    bool found = fh != nullptr;
+    geom::Point3 intersection(query);
+    bool found = LocateAndIntersect(query, hint, intersection);
     if (found) {
-      // Triangle vertices
-      const auto& p0 = fh->vertex(0)->point();
-      const auto& p1 = fh->vertex(1)->point();
-      const auto& p2 = fh->vertex(2)->point();
-
-      // Height query
-      const geom::Direction3 direction(0, 0, 1);
-      geom::Point3 intersection(query);
-      geom::Triangle triangle(p0, p1, p2);
-
-      found = Geometry::LineIntersectsTriangle(
-          query, direction, triangle, intersection);
-
-      if (found) {
-        height_i = intersection.z() - query.z();
-      }
+      height_i = intersection.z() - query.z();
     }
     heights[i] = height_i;
     foundAll &= found;
@@ -340,39 +298,18 @@ bool TriangulatedGrid::Private::Height(
   return foundAll;
 }
 
-//////////////////////////////////////////////////
 bool TriangulatedGrid::Private::Interpolate(TriangulatedGrid& patch) const {
   bool foundAll = true;
 
-  Face_handle fh = nullptr;
+  int64_t hint = -1;
   for (auto it = patch.impl_->points_.begin();
       it != patch.impl_->points_.end(); ++it) {
     double height = 0.0;
     const geom::Point3& query = *it;
-    fh = tri_.locate(query, fh);
-    bool found = fh != nullptr;
+    geom::Point3 intersection(query);
+    bool found = LocateAndIntersect(query, hint, intersection);
     if (found) {
-      // Triangle vertices
-      const auto& p0 = fh->vertex(0)->point();
-      const auto& p1 = fh->vertex(1)->point();
-      const auto& p2 = fh->vertex(2)->point();
-
-      // Height query
-      const geom::Direction3 direction(0, 0, 1);
-      geom::Point3 intersection(query);
-      geom::Triangle triangle(p0, p1, p2);
-
-      found = Geometry::LineIntersectsTriangle(
-          query, direction, triangle, intersection);
-
-      // @DEBUG_INFO
-      // std::cout << "query:        " << query << "\n";
-      // std::cout << "triangle:     " << triangle << "\n";
-      // std::cout << "intersection: " << intersection << "\n";
-
-      if (found) {
-        height = intersection.z();
-      }
+      height = intersection.z();
     }
     // @NOTE this assumes the patch initially has height = 0.0;
     *it = geom::Point3(query.x(), query.y(), height);
@@ -382,22 +319,18 @@ bool TriangulatedGrid::Private::Interpolate(TriangulatedGrid& patch) const {
   return foundAll;
 }
 
-//////////////////////////////////////////////////
 const Point3Range& TriangulatedGrid::Private::Points() const {
   return points_;
 }
 
-//////////////////////////////////////////////////
 const Index3Range& TriangulatedGrid::Private::Indices() const {
   return indices_;
 }
 
-//////////////////////////////////////////////////
 const geom::Point3& TriangulatedGrid::Private::Origin() const {
   return origin_;
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::ApplyPose(const gz::math::Pose3d& pose) {
   // Origin - slide the patch in the xy - plane only
   geom::Point3 o = geom::Origin();
@@ -413,46 +346,36 @@ void TriangulatedGrid::Private::ApplyPose(const gz::math::Pose3d& pose) {
     auto& p = *it.second;
     p = geom::Point3(p0.x() + pose.Pos().X(), p0.y() + pose.Pos().Y(), p0.z());
   }
-
-  // Triangulation points
-  for (auto v = tri_.finite_vertices_begin();
-      v != tri_.finite_vertices_end(); ++v) {
-    int64_t idx = v->info();
-    v->set_point(points_[idx]);
-  }
 }
 
-//////////////////////////////////////////////////
 bool TriangulatedGrid::Private::IsValid(bool verbose) const {
   bool isValid = true;
-
-  // Triangulation Hierarchy
-  const Triangulation::Triangulation_data_structure& tds = tri_.tds();
-
-  // Verify infinite vertex
-  auto vi = tri_.infinite_vertex();
-  isValid &= vi->is_valid(verbose);
-
-  // Verify vertices
-  for (auto v = tds.vertices_begin(); v !=  tds.vertices_end(); ++v) {
-    isValid &= v->is_valid(verbose);
+  const int64_t nPoints = static_cast<int64_t>(points_.size());
+  if (nPoints != (nx_ + 1) * (ny_ + 1)) {
+    isValid = false;
+    if (verbose)
+      std::cerr << "TriangulatedGrid: expected " << (nx_ + 1) * (ny_ + 1)
+          << " points, have " << nPoints << "\n";
   }
-
-  // Verify faces
-  for (auto f = tds.faces_begin(); f !=  tds.faces_end(); ++f) {
-    isValid &= f->is_valid(verbose);
+  if (static_cast<int64_t>(indices_.size()) != 2 * nx_ * ny_) {
+    isValid = false;
+    if (verbose)
+      std::cerr << "TriangulatedGrid: expected " << 2 * nx_ * ny_
+          << " faces, have " << indices_.size() << "\n";
   }
-
-  // Verify triangulation hierarchy data structure
-  isValid &= tds.is_valid(verbose);
-
-  // Verify triangulation hierarchy
-  isValid &= tri_.is_valid(verbose);
-
+  for (const auto& f : indices_) {
+    for (int k = 0; k < 3; ++k) {
+      if (f[k] < 0 || f[k] >= nPoints) {
+        isValid = false;
+        if (verbose)
+          std::cerr << "TriangulatedGrid: face index out of range: "
+              << f[k] << "\n";
+      }
+    }
+  }
   return isValid;
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::DebugPrintMesh() const {
   std::cout << "nx: " << nx_ << "\n";
   std::cout << "ny: " << ny_ << "\n";
@@ -474,102 +397,40 @@ void TriangulatedGrid::Private::DebugPrintMesh() const {
   }
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::DebugPrintTriangulation() const {
-  const Triangulation::Triangulation_data_structure& ctds = tri_.tds();
-
-  std::cout << "triangulation hierarchy data structure" << "\n";
-  std::cout << ctds << "\n";
-
-  std::cout << "is valid: " << ctds.is_valid() << "\n";
-  std::cout << "dimension: " << ctds.dimension() << "\n";
-  std::cout << "number of vertices : " << ctds.number_of_vertices() << "\n";
-  std::cout << "number of faces : " << ctds.number_of_faces() << "\n";
-  std::cout << "number of edges : " << ctds.number_of_edges() << "\n";
-  std::cout << "\n";
-
-  std::cout << "triangulation hierarchy" << "\n";
-  std::cout << tri_ << "\n";
-
-  std::cout << "is valid: " << tri_.is_valid() << "\n";
-  std::cout << "dimension: " << tri_.dimension() << "\n";
-  std::cout << "number of vertices : " << tri_.number_of_vertices() << "\n";
-  std::cout << "number of faces : " << tri_.number_of_faces() << "\n";
-
-  std::cout << "hierarchy: " << tri_.is_valid() << "\n";
-  tri_.is_valid(true);
-
-  int64_t idx = 0;
-  std::cout << "vertex -> mesh vertex:" << "\n";
-  for (auto v = tri_.all_vertices_begin();
-      v != tri_.all_vertices_end(); ++v, ++idx) {
-    std::cout << "vertex: " << idx
-      << ", mesh vertex: " << v->info()
+  std::cout << "regular lattice triangulation" << "\n";
+  std::cout << "is valid: " << IsValid() << "\n";
+  std::cout << "dimension: 2" << "\n";
+  std::cout << "number of vertices : " << points_.size() << "\n";
+  std::cout << "number of faces : " << indices_.size() << "\n";
+  std::cout << "number of boundary edges : " << infinite_indices_.size()
       << "\n";
-  }
-
-  idx = 0;
-  std::cout << "face -> mesh face:" << "\n";
-  for (auto f = tri_.all_faces_begin();
-      f != tri_.all_faces_end(); ++f, ++idx) {
-    std::cout << "face: " << idx
-      << ", mesh face: " << f->info()
-      << "\n";
-  }
+  std::cout << "origin : " << origin_ << "\n";
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::UpdatePoints(
       const std::vector<geom::Point3>& from) {
-  // Mesh points
   points_ = from;
-
-  // Triangulation points
-  for (auto v = tri_.finite_vertices_begin();
-      v != tri_.finite_vertices_end(); ++v) {
-    int64_t idx = v->info();
-    v->set_point(points_[idx]);
-  }
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::UpdatePoints(
     const std::vector<gz::math::Vector3d>& from) {
-  // Mesh points
   auto it_to = points_.begin();
   auto it_from = from.begin();
   for ( ; it_to != points_.end() && it_from != from.end();
       ++it_to, ++it_from) {
     *it_to = geom::Point3(it_from->X(), it_from->Y(), it_from->Z());
   }
-
-  // Triangulation points
-  for (auto v = tri_.finite_vertices_begin();
-      v != tri_.finite_vertices_end(); ++v) {
-    int64_t idx = v->info();
-    v->set_point(points_[idx]);
-  }
 }
 
-//////////////////////////////////////////////////
 void TriangulatedGrid::Private::UpdatePoints(const geom::Mesh& from) {
-  // Mesh points
   const Index n = std::min<Index>(points_.size(), geom::VertexCount(from));
   for (Index i = 0; i < n; ++i) {
     const geom::Point3& p = geom::VertexPoint(from, i);
     points_[i] = geom::Point3(p.x(), p.y(), p.z());
   }
-
-  // Triangulation points
-  for (auto v = tri_.finite_vertices_begin();
-      v != tri_.finite_vertices_end(); ++v) {
-    int64_t idx = v->info();
-    v->set_point(points_[idx]);
-  }
 }
 
-//////////////////////////////////////////////////
-//////////////////////////////////////////////////
 TriangulatedGrid::~TriangulatedGrid()
 {
 }
