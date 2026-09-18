@@ -65,8 +65,12 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     ${FFT_LIBRARIES}
   PRIVATE
     OpenMP::OpenMP_CXX
-    embree
 )
+if(GZ_WAVES_WITH_EMBREE)
+  target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME} PRIVATE embree)
+  target_compile_definitions(${PROJECT_LIBRARY_TARGET_NAME}
+    PRIVATE GZ_WAVES_HAVE_EMBREE=1)
+endif()
 if (UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     PRIVATE stdc++fs)

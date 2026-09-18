@@ -298,13 +298,21 @@ endif()
 find_package(Eigen3 REQUIRED)
 
 #--------------------------------------
-# Embree (Apache-2.0): ray / mesh intersection queries (geom::RayMeshQuery).
-# Embree 4 is preferred; the 3.x API is also supported.
-find_package(embree 4 QUIET)
-if(NOT embree_FOUND)
-  find_package(embree 3 REQUIRED)
+# Embree (Apache-2.0): accelerated ray / mesh intersection queries
+# (geom::RayMeshQuery). Embree 4 is preferred; the 3.x API is also
+# supported. With GZ_WAVES_WITH_EMBREE=OFF the query falls back to a
+# brute-force scan over the mesh faces (no extra dependency).
+option(GZ_WAVES_WITH_EMBREE "Use Embree for ray / mesh queries" ON)
+if(GZ_WAVES_WITH_EMBREE)
+  find_package(embree 4 QUIET)
+  if(NOT embree_FOUND)
+    find_package(embree 3 REQUIRED)
+  endif()
+  message(STATUS "Found Embree ${embree_VERSION}")
+else()
+  message(STATUS "Embree disabled (GZ_WAVES_WITH_EMBREE=OFF): "
+      "geom::RayMeshQuery uses the brute-force fallback")
 endif()
-message(STATUS "Found Embree ${embree_VERSION}")
 
 #--------------------------------------
 # Find FFTW3 (double-precision) (GPL) as FFT library.
