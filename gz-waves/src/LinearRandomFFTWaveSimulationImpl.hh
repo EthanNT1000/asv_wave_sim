@@ -132,6 +132,12 @@ class LinearRandomFFTWaveSimulation::Impl
 
   void CreateFFTPlans();
 
+  /// \brief Run the eight per-step transforms (elevation, derivatives,
+  /// displacements, displacement derivatives) that are still pending,
+  /// concurrently, one transform per thread. Each accessor still checks
+  /// its own flag, so calling this first is an optimisation only.
+  void ExecutePending();
+
   /// \note The fft:: transforms expect the multi-dimensional arrays to be
   ///       in row-major format. Eigen::ArrayXXcd is column-major, so here
   ///       we explicity set the storage type.
@@ -166,8 +172,9 @@ class LinearRandomFFTWaveSimulation::Impl
   std::vector<Eigen::ArrayXXdRowMajor>    fft_out_p_;
   std::vector<std::unique_ptr<fft::BackwardC2R>> fft_plan_p_;
 
-  /// \brief lazy evaluation flags
-  std::vector<bool> fft_needs_update_;
+  /// \brief lazy evaluation flags (int, not bool: written per element
+  /// from parallel threads in ExecutePending)
+  std::vector<int> fft_needs_update_;
 
   /// \brief Gravity acceleration [m/s^2]
   double gravity_{9.81};

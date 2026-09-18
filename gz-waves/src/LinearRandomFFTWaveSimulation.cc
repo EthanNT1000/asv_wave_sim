@@ -96,6 +96,26 @@ void LinearRandomFFTWaveSimulation::Impl::SetTime(double time)
 }
 
 //////////////////////////////////////////////////
+void LinearRandomFFTWaveSimulation::Impl::ExecutePending()
+{
+  fft::BackwardC2R* plans[8] = {
+    fft_plan0_.get(), fft_plan1_.get(), fft_plan2_.get(), fft_plan3_.get(),
+    fft_plan4_.get(), fft_plan5_.get(), fft_plan6_.get(), fft_plan7_.get()};
+
+  // Independent transforms into independent output arrays; the flags are
+  // distinct int elements, so each iteration touches its own memory.
+  #pragma omp parallel for schedule(dynamic)
+  for (int i = 0; i < 8; ++i)
+  {
+    if (fft_needs_update_[i])
+    {
+      plans[i]->Execute();
+      fft_needs_update_[i] = 0;
+    }
+  }
+}
+
+//////////////////////////////////////////////////
 void LinearRandomFFTWaveSimulation::Impl::ElevationAt(
     Eigen::Ref<Eigen::ArrayXXd> h)
 {
@@ -363,7 +383,7 @@ void LinearRandomFFTWaveSimulation::Impl::ComputeCurrentAmplitudes(
     fft_needs_update_.cbegin(),
     fft_needs_update_.cend(),
     fft_needs_update_.begin(),
-    [] (bool) -> bool { return true; });
+    [] (int) -> int { return 1; });
 
   // create 1d views
   auto r = rho_.reshaped();
@@ -630,7 +650,7 @@ void LinearRandomFFTWaveSimulation::Impl::CreateFFTPlans()
     fft_needs_update_.cbegin(),
     fft_needs_update_.cend(),
     fft_needs_update_.begin(),
-    [] (bool) -> bool { return true; });
+    [] (int) -> int { return 1; });
 }
 
 //////////////////////////////////////////////////
@@ -738,6 +758,7 @@ void LinearRandomFFTWaveSimulation::DisplacementAndDerivAt(
     Eigen::Ref<Eigen::ArrayXXd> dsydy,
     Eigen::Ref<Eigen::ArrayXXd> dsxdy) const
 {
+  impl_->ExecutePending();
   impl_->ElevationAt(h);
   impl_->ElevationDerivAt(dhdx, dhdy);
   impl_->DisplacementAt(sx, sy);
