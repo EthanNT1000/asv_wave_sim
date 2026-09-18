@@ -233,7 +233,9 @@ bool TriangulatedGrid::Private::LocateAndIntersect(const geom::Point3& query,
     if (ixm < 0 && ixp >= nx_ && iym < 0 && iyp >= ny_)
       break;
     // bottom and top rows of the ring
-    for (Index i = std::max<Index>(ixm, 0); i <= std::min<Index>(ixp, nx_ - 1); ++i) {
+    const Index i0 = std::max<Index>(ixm, 0);
+    const Index i1 = std::min<Index>(ixp, nx_ - 1);
+    for (Index i = i0; i <= i1; ++i) {
       if (iym >= 0 && IntersectCell(i, iym, query, face, intersection)) {
         hint = face; return true;
       }
@@ -242,7 +244,9 @@ bool TriangulatedGrid::Private::LocateAndIntersect(const geom::Point3& query,
       }
     }
     // left and right columns (excluding corners already visited)
-    for (Index j = std::max<Index>(iym + 1, 0); j <= std::min<Index>(iyp - 1, ny_ - 1); ++j) {
+    const Index j0 = std::max<Index>(iym + 1, 0);
+    const Index j1 = std::min<Index>(iyp - 1, ny_ - 1);
+    for (Index j = j0; j <= j1; ++j) {
       if (ixm >= 0 && IntersectCell(ixm, j, query, face, intersection)) {
         hint = face; return true;
       }
