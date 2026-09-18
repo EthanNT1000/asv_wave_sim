@@ -1,8 +1,26 @@
-// gz-waves/src/WaterCurrentGrid.cc
+// Copyright (C) 2026  Ethan Chiang and contributors
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #include "gz/waves/WaterCurrentGrid.hh"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <string>
+#include <utility>
+
 #include <gz/common/Console.hh>
 
 namespace gz::waves {
@@ -111,4 +129,4 @@ gz::waves::geom::Vector3 WaterCurrentGrid::SampleAt(double x, double y) const
     return { vx, vy, 0.0 };
 }
 
-} // namespace gz::waves
+}  // namespace gz::waves
