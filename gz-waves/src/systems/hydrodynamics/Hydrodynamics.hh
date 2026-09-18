@@ -58,7 +58,8 @@ class HydrodynamicsPrivate;
 ///     <viscous_drag_on>1</viscous_drag_on>
 ///     <pressure_drag_on>1</pressure_drag_on>
 ///
-///     <!-- Per-DOF Fossen damping (surge/sway/heave/roll/pitch/yaw × linear+quadratic) -->
+///     <!-- Per-DOF Fossen damping
+///          (surge/sway/heave/roll/pitch/yaw x linear+quadratic) -->
 ///     <cDampU1>1.0E-6</cDampU1>  <cDampU2>1.0E-6</cDampU2>
 ///     <cDampV1>1.0E-3</cDampV1>  <cDampV2>1.0E-3</cDampV2>
 ///     <cDampW1>1.0E-3</cDampW1>  <cDampW2>1.0E-3</cDampW2>
