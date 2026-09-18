@@ -60,19 +60,21 @@ $HOME/wave_sim_ws/install/lib
 
 ## CGAL library usage
 
-The CGAL library is used for the following calculations:
+CGAL is no longer used. All geometry goes through the `gz::waves::geom`
+facade in `gz-waves/include/gz/waves/geom/`:
 
-`Algorithm`
-- CGAL not used
+- `geom/Types.hh`: `Point3`, `Vector3`, `Vector2` (Eigen), `Direction3`,
+  `Line`, `Ray`, `Triangle` and the indexed triangle `Mesh`.
+- `geom/Vector.hh`: `Cross`, `Dot`, `SquaredLength`, `Centroid`, `MidPoint`,
+  `UnitlessNormal`, `Collinear`.
+- `geom/Mesh.hh`: index-based mesh access.
+- `geom/RayMeshQuery.hh`: first-hit ray / mesh queries (Embree).
 
-`Convert`
-- Types: Point3, Vector2, Vector3
-- Functions: gz::math <=> CGAL
-
-`Geometry`
-- Types: Triangle, Point3, Vector2, Vector3, Direction3, Mesh, AABBTree
-- Functions:  
-
+The historical `gz::cgal::*` type names and `CGALTypes.hh` have been removed;
+use the `geom` types. `TriangulatedGrid` locates tile triangles with
+lattice index arithmetic instead of a constrained Delaunay triangulation.
+See `docs/cgal_audit.md` for the audit that motivated the change and
+`tests/geom/test_geom_baseline.py` for the golden values that pin behaviour.
 
 ## Ogre2 HLMS Guides
 

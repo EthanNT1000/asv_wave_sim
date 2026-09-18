@@ -25,7 +25,9 @@
 #ifndef GZ_WAVES_GEOM_VECTOR_HH_
 #define GZ_WAVES_GEOM_VECTOR_HH_
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "gz/waves/geom/Types.hh"
 
@@ -110,6 +112,47 @@ inline bool Collinear(const Point3& p, const Point3& q, const Point3& r)
 {
   const Vector3 n = Cross(q - p, r - p);
   return n.x() == 0.0 && n.y() == 0.0 && n.z() == 0.0;
+}
+
+/// \brief Relative tolerance below which a triangle is treated as
+/// degenerate by Degenerate(): the sine of the angle between its edges.
+/// 1e-12 is far above the relative rounding noise of double products
+/// (~1e-16) and far below any real thin triangle of a hull mesh.
+constexpr double kDegenerateTriangleTol = 1.0e-12;
+
+/// \brief Safety factor on the absolute rounding-noise floor used by
+/// Degenerate() (see there).
+constexpr double kDegenerateNoiseFactor = 16.0;
+
+/// \brief True if the triangle (p, q, r) is degenerate: its points are
+/// exactly collinear, or so nearly collinear that the direction of the
+/// edge cross product n = (q - p) x (r - p) is not meaningful. Two
+/// criteria, either of which suffices:
+///
+///  1. angle:  |n| <= tol * |q - p| * |r - p|, i.e. the sine of the angle
+///     between the edges is at most tol (scale invariant);
+///  2. noise:  |n| <= 16 * eps * M * (|q - p| + |r - p|), where eps is the
+///     double-precision epsilon and M the largest coordinate magnitude of
+///     the three points: the cross product is within the rounding error
+///     of forming the edge vectors from the coordinates, so its direction
+///     is noise even if criterion 1 is not met (tiny slivers far from the
+///     origin).
+inline bool Degenerate(const Point3& p, const Point3& q, const Point3& r,
+    double tol = kDegenerateTriangleTol)
+{
+  const Vector3 e1 = q - p;
+  const Vector3 e2 = r - p;
+  const double n2 = SquaredLength(Cross(e1, e2));
+  const double l1 = SquaredLength(e1);
+  const double l2 = SquaredLength(e2);
+  if (n2 <= tol * tol * l1 * l2)
+    return true;
+  const double m = std::max({p.cwiseAbs().maxCoeff(), q.cwiseAbs().maxCoeff(),
+      r.cwiseAbs().maxCoeff()});
+  const double noise = kDegenerateNoiseFactor *
+      std::numeric_limits<double>::epsilon() * m *
+      (std::sqrt(l1) + std::sqrt(l2));
+  return n2 <= noise * noise;
 }
 
 inline Point3 Centroid(const Point3& p, const Point3& q, const Point3& r)

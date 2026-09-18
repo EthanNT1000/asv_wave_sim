@@ -14,16 +14,21 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// \file geom/RayMeshQuery.cc
-/// \brief Embree backend for first-hit ray / mesh queries (Phase 3 of the
-/// CGAL removal, docs/cgal_audit.md).
+/// \brief First-hit ray / mesh queries (Phase 3 of the CGAL removal,
+/// docs/cgal_audit.md).
 ///
-/// Embree (Apache-2.0) builds the bounding-volume hierarchy and finds the
-/// nearest hit primitive in single precision. The intersection point is then
-/// recomputed in double precision on that triangle (ray / plane
-/// intersection), so the result matches the previous double-precision CGAL
-/// AABB-tree answer to rounding. Vertices are stored relative to the mesh
-/// bounding-box centre to keep the float traversal accurate for meshes far
-/// from the origin.
+/// With GZ_WAVES_HAVE_EMBREE, Embree (Apache-2.0) builds the bounding-volume
+/// hierarchy and finds the nearest hit primitive in single precision. The
+/// intersection point is then recomputed in double precision on that
+/// triangle (ray / plane intersection), so the result matches the previous
+/// double-precision CGAL AABB-tree answer to rounding. Vertices are stored
+/// relative to the mesh bounding-box centre to keep the float traversal
+/// accurate for meshes far from the origin.
+///
+/// Without Embree (CMake option GZ_WAVES_WITH_EMBREE=OFF) the query is a
+/// brute-force double-precision scan over all faces: O(faces) per ray, which
+/// is adequate for the few hundred faces of a hull collision mesh and adds
+/// no dependency.
 
 #include "gz/waves/geom/RayMeshQuery.hh"
 
@@ -31,10 +36,12 @@
 #include <limits>
 #include <vector>
 
+#ifdef GZ_WAVES_HAVE_EMBREE
 #if __has_include(<embree4/rtcore.h>)
 #include <embree4/rtcore.h>
 #else
 #include <embree3/rtcore.h>
+#endif
 #endif
 
 #include "gz/waves/geom/Mesh.hh"
@@ -48,12 +55,14 @@ namespace geom
 {
 namespace
 {
+#ifdef GZ_WAVES_HAVE_EMBREE
 /// \brief One Embree device shared by all queries in the process.
 RTCDevice SharedDevice()
 {
   static RTCDevice device = rtcNewDevice(nullptr);
   return device;
 }
+#endif
 
 /// \brief Ray / plane intersection with the plane of triangle (a, b, c),
 /// in double precision. Returns false if the ray is parallel to the plane.
@@ -70,6 +79,7 @@ bool RefineHit(const Point3& o, const Vector3& d,
 }
 }  // namespace
 
+#ifdef GZ_WAVES_HAVE_EMBREE
 class RayMeshQueryPrivate
 {
  public:
@@ -112,7 +122,7 @@ class RayMeshQueryPrivate
     faces.reserve(nF);
     for (Index f = 0; f < nF; ++f)
     {
-      const auto v = FaceVertices(_mesh, f);
+      const auto& v = FaceVertices(_mesh, f);
       ib[3 * f + 0] = static_cast<unsigned>(v[0]);
       ib[3 * f + 1] = static_cast<unsigned>(v[1]);
       ib[3 * f + 2] = static_cast<unsigned>(v[2]);
@@ -182,6 +192,50 @@ class RayMeshQueryPrivate
   Vector3 center;
   std::vector<std::array<Index, 3>> faces;
 };
+#else  // GZ_WAVES_HAVE_EMBREE
+/// \brief Brute-force fallback: Moller-Trumbore against every face, keeping
+/// the nearest hit with t >= 0.
+class RayMeshQueryPrivate
+{
+ public:
+  explicit RayMeshQueryPrivate(const Mesh& _mesh) : mesh(_mesh) {}
+
+  bool Intersect(const Point3& o, const Vector3& d, Point3& hit) const
+  {
+    const Index nF = FaceCount(mesh);
+    double tBest = std::numeric_limits<double>::infinity();
+    for (Index f = 0; f < nF; ++f)
+    {
+      const auto& v = FaceVertices(mesh, f);
+      const Point3& a = VertexPoint(mesh, v[0]);
+      const Vector3 e1 = VertexPoint(mesh, v[1]) - a;
+      const Vector3 e2 = VertexPoint(mesh, v[2]) - a;
+      const Vector3 h = Cross(d, e2);
+      const double det = Dot(e1, h);
+      if (det == 0.0)
+        continue;
+      const double invDet = 1.0 / det;
+      const Vector3 s = o - a;
+      const double u = invDet * Dot(s, h);
+      if (u < 0.0 || u > 1.0)
+        continue;
+      const Vector3 q = Cross(s, e1);
+      const double w = invDet * Dot(d, q);
+      if (w < 0.0 || u + w > 1.0)
+        continue;
+      const double t = invDet * Dot(e2, q);
+      if (t >= 0.0 && t < tBest)
+        tBest = t;
+    }
+    if (!std::isfinite(tBest))
+      return false;
+    hit = o + d * tBest;
+    return true;
+  }
+
+  const Mesh& mesh;
+};
+#endif  // GZ_WAVES_HAVE_EMBREE
 
 //////////////////////////////////////////////////
 RayMeshQuery::~RayMeshQuery() = default;

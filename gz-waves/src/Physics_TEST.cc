@@ -39,13 +39,6 @@
 
 namespace geom = gz::waves::geom;
 
-namespace cgal
-{
-using gz::waves::geom::Mesh;
-using gz::waves::geom::Point3;
-using gz::waves::geom::Vector3;
-}  // namespace cgal
-
 using gz::waves::Geometry;
 using gz::waves::Grid;
 using gz::waves::Hydrodynamics;

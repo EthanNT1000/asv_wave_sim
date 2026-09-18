@@ -9,12 +9,48 @@
   <author>Rhys Mainwaring</author>
   <author>Ethan Chiang</author>
 
-  <depend>gz_sim_vendor</depend>
-  <depend>gz_cmake_vendor</depend>
-  <depend>gz_plugin_vendor</depend>
-  <depend>gz_common_vendor</depend>
-
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Geometry (Eigen, MPL-2.0) and ray/mesh queries (Embree, Apache-2.0;
+       optional at build time via -DGZ_WAVES_WITH_EMBREE=OFF). The FFT is
+       PocketFFT, vendored header-only in thirdparty/pocketfft. -->
+  <depend>eigen</depend>
+  <depend>embree</depend>
+
+  <!-- Gazebo. GZ_VERSION selects the Gazebo release the same way it does in
+       CMakeLists.txt. When it is unset the vendor packages of the ROS
+       distribution (Jazzy and later) provide Gazebo. -->
+  <depend condition="$GZ_VERSION == ''">gz_cmake_vendor</depend>
+  <depend condition="$GZ_VERSION == ''">gz_common_vendor</depend>
+  <depend condition="$GZ_VERSION == ''">gz_plugin_vendor</depend>
+  <depend condition="$GZ_VERSION == ''">gz_sim_vendor</depend>
+
+  <depend condition="$GZ_VERSION == garden">gz-cmake3</depend>
+  <depend condition="$GZ_VERSION == garden">gz-common5</depend>
+  <depend condition="$GZ_VERSION == garden">gz-math7</depend>
+  <depend condition="$GZ_VERSION == garden">gz-msgs9</depend>
+  <depend condition="$GZ_VERSION == garden">gz-plugin2</depend>
+  <depend condition="$GZ_VERSION == garden">gz-rendering7</depend>
+  <depend condition="$GZ_VERSION == garden">gz-sensors7</depend>
+  <depend condition="$GZ_VERSION == garden">gz-sim7</depend>
+  <depend condition="$GZ_VERSION == garden">gz-transport12</depend>
+  <depend condition="$GZ_VERSION == garden">sdformat13</depend>
+
+  <depend condition="$GZ_VERSION == harmonic">gz-cmake3</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-common5</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-math7</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-msgs10</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-plugin2</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-sim8</depend>
+  <depend condition="$GZ_VERSION == harmonic">gz-transport13</depend>
+
+  <depend condition="$GZ_VERSION == ionic">gz-cmake4</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-common6</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-math8</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-msgs11</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-plugin3</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-sim9</depend>
+  <depend condition="$GZ_VERSION == ionic">gz-transport14</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

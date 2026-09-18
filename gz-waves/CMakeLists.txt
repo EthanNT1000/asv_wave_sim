@@ -298,30 +298,21 @@ endif()
 find_package(Eigen3 REQUIRED)
 
 #--------------------------------------
-# CGAL and its components...
-
-find_package(CGAL REQUIRED COMPONENTS Core)
-
-if(NOT CGAL_FOUND)
-  message(STATUS "This project requires the CGAL library, and will not be compiled.")
-  return()
+# Embree (Apache-2.0): accelerated ray / mesh intersection queries
+# (geom::RayMeshQuery). Embree 4 is preferred; the 3.x API is also
+# supported. With GZ_WAVES_WITH_EMBREE=OFF the query falls back to a
+# brute-force scan over the mesh faces (no extra dependency).
+option(GZ_WAVES_WITH_EMBREE "Use Embree for ray / mesh queries" ON)
+if(GZ_WAVES_WITH_EMBREE)
+  find_package(embree 4 QUIET)
+  if(NOT embree_FOUND)
+    find_package(embree 3 REQUIRED)
+  endif()
+  message(STATUS "Found Embree ${embree_VERSION}")
+else()
+  message(STATUS "Embree disabled (GZ_WAVES_WITH_EMBREE=OFF): "
+      "geom::RayMeshQuery uses the brute-force fallback")
 endif()
-
-message("CGAL_VERSION_MAJOR: ${CGAL_VERSION_MAJOR}")
-
-if (${CGAL_VERSION_MAJOR} LESS 6)
-  # include helper file
-  include(${CGAL_USE_FILE})
-endif()
-
-#--------------------------------------
-# Embree (Apache-2.0): ray / mesh intersection queries (geom::RayMeshQuery).
-# Embree 4 is preferred; the 3.x API is also supported.
-find_package(embree 4 QUIET)
-if(NOT embree_FOUND)
-  find_package(embree 3 REQUIRED)
-endif()
-message(STATUS "Found Embree ${embree_VERSION}")
 
 #--------------------------------------
 # FFT: PocketFFT (BSD-3-Clause), vendored header-only in thirdparty/pocketfft

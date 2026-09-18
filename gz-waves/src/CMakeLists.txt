@@ -38,7 +38,6 @@ set(sources
 set(gtest_sources
   ${gtest_sources}
   Algorithm_TEST.cc
-  CGAL_TEST.cc
   Fft_TEST.cc
   Geometry_TEST.cc
   Grid_TEST.cc
@@ -66,13 +65,11 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     sdformat${SDF_VER}::sdformat${SDF_VER}
   PRIVATE
     OpenMP::OpenMP_CXX
-    embree
 )
-if (${CGAL_VERSION_MAJOR} GREATER_EQUAL 6)
-  target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
-    PUBLIC
-    CGAL::CGAL
-  )
+if(GZ_WAVES_WITH_EMBREE)
+  target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME} PRIVATE embree)
+  target_compile_definitions(${PROJECT_LIBRARY_TARGET_NAME}
+    PRIVATE GZ_WAVES_HAVE_EMBREE=1)
 endif()
 if (UNIX AND NOT APPLE)
   target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
