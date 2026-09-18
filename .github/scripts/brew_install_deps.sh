@@ -24,6 +24,7 @@ brew tap osrf/simulation
 PKGS=(
   gz-harmonic
   cgal
+  embree
 )
 
 # install packages
