@@ -26,6 +26,7 @@ set(sources
   WaveSimulation.cc
   LinearRandomFFTWaveSimulation.cc
   LinearRandomFFTWaveSimulationRef.cc
+  fft/Fft.cc
   LinearRandomWaveSimulation.cc
   LinearRegularWaveSimulation.cc
   TrochoidIrregularWaveSimulation.cc
@@ -37,7 +38,7 @@ set(gtest_sources
   ${gtest_sources}
   Algorithm_TEST.cc
   CGAL_TEST.cc
-  EigenFFTW_TEST.cc
+  Fft_TEST.cc
   Geometry_TEST.cc
   Grid_TEST.cc
   LinearRegularWaveSimulation_TEST.cc
@@ -81,6 +82,8 @@ target_include_directories(${PROJECT_LIBRARY_TARGET_NAME}
   PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   ${EIGEN3_INCLUDE_DIR}
+  PRIVATE
+  ${PROJECT_SOURCE_DIR}/src
 )
 
 include_directories(${PROJECT_SOURCE_DIR}/test)
