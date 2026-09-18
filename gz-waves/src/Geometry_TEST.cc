@@ -146,6 +146,50 @@ TEST(Geometry, TriangleNormal)
 }
 
 //////////////////////////////////////////////////
+TEST(Geometry, DegenerateTriangleNormal)
+{
+  { // exactly collinear points: null normal
+    geom::Triangle t(
+      geom::Point3(0, 0, 0),
+      geom::Point3(1, 0, 0),
+      geom::Point3(2, 0, 0));
+    EXPECT_TRUE(geom::Degenerate(t[0], t[1], t[2]));
+    EXPECT_EQ(Geometry::Normal(t), geom::NullVector());
+  }
+
+  { // nearly collinear (sine of edge angle ~5e-14): null normal
+    geom::Triangle t(
+      geom::Point3(0, 0, 0),
+      geom::Point3(1, 0, 0),
+      geom::Point3(2, 1.0E-13, 0));
+    EXPECT_TRUE(geom::Degenerate(t[0], t[1], t[2]));
+    EXPECT_EQ(Geometry::Normal(t), geom::NullVector());
+    EXPECT_EQ(Geometry::Normal(t[0], t[1], t[2]), geom::NullVector());
+  }
+
+  { // sliver whose cross product is rounding noise at large coordinates
+    geom::Point3 p(5000.0, -3000.0, 100.0);
+    geom::Triangle t(
+      p,
+      p + geom::Vector3(1.0E-7, 2.0E-7, 0),
+      p + geom::Vector3(2.0E-7, 4.0E-7 + 1.0E-15, 0));
+    EXPECT_TRUE(geom::Degenerate(t[0], t[1], t[2]));
+    EXPECT_EQ(Geometry::Normal(t), geom::NullVector());
+  }
+
+  { // thin but valid triangle (sine of edge angle 1e-6): unit normal
+    geom::Triangle t(
+      geom::Point3(0, 0, 0),
+      geom::Point3(1, 0, 0),
+      geom::Point3(2, 2.0E-6, 0));
+    EXPECT_FALSE(geom::Degenerate(t[0], t[1], t[2]));
+    geom::Vector3 n = Geometry::Normal(t);
+    EXPECT_NEAR(std::sqrt(geom::SquaredLength(n)), 1.0, 1.0E-12);
+    EXPECT_NEAR(n.z(), 1.0, 1.0E-12);
+  }
+}
+
+//////////////////////////////////////////////////
 TEST(Geometry, HorizontalIntercept)
 {
   // Case - parallel to xz-plane

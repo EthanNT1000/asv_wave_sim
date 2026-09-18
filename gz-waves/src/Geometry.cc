@@ -90,21 +90,22 @@ geom::Vector3 Geometry::Normalize(const geom::Vector3& _v)
 namespace
 {
 /// \brief Unit normal of the triangle (p0, p1, p2), or the null vector if
-/// the points are degenerate.
+/// the triangle is degenerate.
 ///
-/// A triangle is degenerate when geom::Collinear reports it: the cross
-/// product of its edge vectors is exactly zero (the CGAL Cartesian
-/// predicate on doubles). Near-degenerate triangles, whose edge vectors
-/// are almost but not exactly parallel, keep the normal of that cross
-/// product, as they did with CGAL. No tolerance is applied, so clipped
-/// sub-triangles are classified exactly as before.
+/// A triangle is degenerate when geom::Degenerate reports it: its points
+/// are exactly collinear (the CGAL predicate, geom::Collinear) or so
+/// nearly collinear that the direction of the edge cross product is
+/// rounding noise (sine of the edge angle <= geom::kDegenerateTriangleTol).
+/// Such triangles, typically slivers produced by clipping a face at the
+/// waterline, have no meaningful normal and contribute no force; CGAL
+/// returned a noisy unit vector for them instead.
 /// See https://github.com/srmainwaring/asv_wave_sim/issues/50.
 geom::Vector3 UnitNormalOrNull(
   const geom::Point3& _p0,
   const geom::Point3& _p1,
   const geom::Point3& _p2)
 {
-  if (geom::Collinear(_p0, _p1, _p2))
+  if (geom::Degenerate(_p0, _p1, _p2))
     return geom::NullVector();
   auto n = geom::UnitlessNormal(_p0, _p1, _p2);
   return n/std::sqrt(geom::SquaredLength(n));
