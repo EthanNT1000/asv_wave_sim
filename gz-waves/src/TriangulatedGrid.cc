@@ -30,6 +30,7 @@
 #include <CGAL/algorithm.h>
 #include <CGAL/point_generators_2.h>
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <utility>
