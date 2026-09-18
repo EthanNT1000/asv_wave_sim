@@ -237,7 +237,6 @@ class PerfChecker:
         self.plugin_dirs:   list[str]    = []
         self.gz_models:     Path | None  = None
         self.world_path:    Path | None  = None
-        self.have_fftw_omp: bool         = False
         self.have_libomp:   bool         = False
         self.have_perf:     bool         = False
         self.perf_paranoid: int          = 4
@@ -255,7 +254,6 @@ class PerfChecker:
         self.world_path    = self._world_src or _resolve_world_sdf()
         self.gz_models     = _resolve_gz_waves_models()
         self.plugin_dirs   = _resolve_plugin_dirs()
-        self.have_fftw_omp = _have_lib('libfftw3_omp.so')
         self.have_libomp = any(_have_lib(n) for n in (
             'libgomp.so.1',
             'libomp.so.5',
@@ -278,8 +276,6 @@ class PerfChecker:
         print(f'  Plugin dirs      : {len(self.plugin_dirs)} found')
         print(f'  CPU cores        : {os.cpu_count()}')
         print(f'  OMP_NUM_THREADS  : {omp_env}')
-        print(f'  libfftw3_omp     : {_G+"yes"+_N if self.have_fftw_omp else _Y+"no"+_N}'
-              f'  (multi-threaded FFT)')
         print(f'  libomp           : {_G+"yes"+_N if self.have_libomp else _Y+"no"+_N}'
               f'  (OpenMP runtime)')
         print(f'  gz.transport     : {_G+"yes"+_N if _HAVE_GZ else _Y+"no — RTF disabled"+_N}')
@@ -432,7 +428,6 @@ class PerfChecker:
         print(f'    Resolution time  : {self.env_time * 1000:6.1f} ms')
         print(f'    CPU cores        : {os.cpu_count()}')
         print(f'    OMP_NUM_THREADS  : {self._threads}')
-        print(f'    libfftw3_omp     : {"yes" if self.have_fftw_omp else "NO"}')
         print(f'    libomp           : {"yes" if self.have_libomp else "NO"}')
         print(f'    Plugin dirs      : {len(self.plugin_dirs)}')
         print(f'    World SDF        : {self.world_path or "not found"}')
@@ -656,13 +651,6 @@ class PerfChecker:
     def _advice(self) -> None:
         issues = False
 
-        if not self.have_fftw_omp:
-            issues = True
-            print(f'    {_Y}• libfftw3_omp not found — multi-threaded FFT unavailable.{_N}')
-            print('         sudo apt-get install libfftw3-dev')
-            print('      Then: fftw_init_threads() + fftw_plan_with_nthreads(N) in')
-            print('      LinearRandomFFTWaveSimulation.cc, link with -lfftw3_omp.')
-
         if not self.have_libomp:
             issues = True
             print(f'    {_Y}• OpenMP runtime not found.{_N}')
@@ -675,7 +663,7 @@ class PerfChecker:
                 issues = True
                 print(f'    {_R}• RTF {pct:.0f}% of target — sim is heavily CPU-bound.{_N}')
                 print('      Add #pragma omp parallel for collapse(2) to OceanTile.cc ~line 814')
-                print('      and call fftw_init_threads() in LinearRandomFFTWaveSimulation.cc.')
+                print('      (the PocketFFT transforms already use OMP_NUM_THREADS threads).')
             elif pct < 90:
                 issues = True
                 print(f'    {_Y}• RTF {pct:.0f}% of target — moderate CPU pressure.{_N}')
