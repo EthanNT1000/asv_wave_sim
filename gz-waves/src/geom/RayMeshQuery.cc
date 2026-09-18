@@ -13,19 +13,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+/// \file geom/RayMeshQuery.cc
+/// \brief Embree backend for first-hit ray / mesh queries (Phase 3 of the
+/// CGAL removal, docs/cgal_audit.md).
+///
+/// Embree (Apache-2.0) builds the bounding-volume hierarchy and finds the
+/// nearest hit primitive in single precision. The intersection point is then
+/// recomputed in double precision on that triangle (ray / plane
+/// intersection), so the result matches the previous double-precision CGAL
+/// AABB-tree answer to rounding. Vertices are stored relative to the mesh
+/// bounding-box centre to keep the float traversal accurate for meshes far
+/// from the origin.
+
 #include "gz/waves/geom/RayMeshQuery.hh"
 
-#include <CGAL/AABB_face_graph_triangle_primitive.h>
-#if CGAL_VERSION_MAJOR >= 6
-#include <CGAL/AABB_traits_3.h>
-#include <optional>
-#include <variant>
+#include <cmath>
+#include <limits>
+#include <vector>
+
+#if __has_include(<embree4/rtcore.h>)
+#include <embree4/rtcore.h>
 #else
-#include <CGAL/AABB_traits.h>
-#include <boost/optional.hpp>
-#include <boost/variant.hpp>
+#include <embree3/rtcore.h>
 #endif
-#include <CGAL/AABB_tree.h>
+
+#include "gz/waves/geom/Mesh.hh"
+#include "gz/waves/geom/Vector.hh"
 
 namespace gz
 {
@@ -33,29 +46,141 @@ namespace waves
 {
 namespace geom
 {
-// Phase 0 backend: the CGAL AABB tree (docs/cgal_audit.md, Sec. 1a).
-typedef detail::CgalKernel Kernel;
-typedef Kernel::Point_3 KPoint;
-typedef Kernel::Ray_3 KRay;
-typedef Kernel::Direction_3 KDirection;
-typedef CGAL::AABB_face_graph_triangle_primitive<Mesh> Primitive;
-#if CGAL_VERSION_MAJOR >= 6
-typedef CGAL::AABB_traits_3<Kernel, Primitive> Traits;
-#else
-typedef CGAL::AABB_traits<Kernel, Primitive> Traits;
-#endif
-typedef CGAL::AABB_tree<Traits> Tree;
+namespace
+{
+/// \brief One Embree device shared by all queries in the process.
+RTCDevice SharedDevice()
+{
+  static RTCDevice device = rtcNewDevice(nullptr);
+  return device;
+}
+
+/// \brief Ray / plane intersection with the plane of triangle (a, b, c),
+/// in double precision. Returns false if the ray is parallel to the plane.
+bool RefineHit(const Point3& o, const Vector3& d,
+    const Point3& a, const Point3& b, const Point3& c, Point3& hit)
+{
+  const Vector3 n = Cross(b - a, c - a);
+  const double denom = Dot(d, n);
+  if (denom == 0.0)
+    return false;
+  const double t = Dot(a - o, n) / denom;
+  hit = o + d * t;
+  return true;
+}
+}  // namespace
 
 class RayMeshQueryPrivate
 {
  public:
   explicit RayMeshQueryPrivate(const Mesh& _mesh) :
-    tree(faces(_mesh).first, faces(_mesh).second, _mesh)
+    mesh(_mesh), scene(nullptr), center(Vector3::Zero())
   {
-    tree.build();
+    const Index nV = VertexCount(_mesh);
+    const Index nF = FaceCount(_mesh);
+    if (nV == 0 || nF == 0)
+      return;
+
+    // Bounding-box centre, used as the float origin.
+    Point3 lo = VertexPoint(_mesh, 0), hi = lo;
+    for (Index i = 1; i < nV; ++i)
+    {
+      const Point3 p = VertexPoint(_mesh, i);
+      lo = lo.cwiseMin(p);
+      hi = hi.cwiseMax(p);
+    }
+    center = 0.5 * (lo + hi);
+
+    RTCDevice device = SharedDevice();
+    scene = rtcNewScene(device);
+    RTCGeometry geometry = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+
+    float* vb = static_cast<float*>(rtcSetNewGeometryBuffer(geometry,
+        RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, 3 * sizeof(float),
+        static_cast<size_t>(nV)));
+    for (Index i = 0; i < nV; ++i)
+    {
+      const Point3 p = VertexPoint(_mesh, i) - center;
+      vb[3 * i + 0] = static_cast<float>(p.x());
+      vb[3 * i + 1] = static_cast<float>(p.y());
+      vb[3 * i + 2] = static_cast<float>(p.z());
+    }
+
+    unsigned* ib = static_cast<unsigned*>(rtcSetNewGeometryBuffer(geometry,
+        RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, 3 * sizeof(unsigned),
+        static_cast<size_t>(nF)));
+    faces.reserve(nF);
+    for (Index f = 0; f < nF; ++f)
+    {
+      const auto v = FaceVertices(_mesh, f);
+      ib[3 * f + 0] = static_cast<unsigned>(v[0]);
+      ib[3 * f + 1] = static_cast<unsigned>(v[1]);
+      ib[3 * f + 2] = static_cast<unsigned>(v[2]);
+      faces.push_back(v);
+    }
+
+    rtcCommitGeometry(geometry);
+    rtcAttachGeometry(scene, geometry);
+    rtcReleaseGeometry(geometry);
+    rtcCommitScene(scene);
   }
 
-  Tree tree;
+  ~RayMeshQueryPrivate()
+  {
+    if (scene)
+      rtcReleaseScene(scene);
+  }
+
+  /// \brief Nearest hit along the ray (o, d); false if none.
+  bool Intersect(const Point3& o, const Vector3& d, Point3& hit) const
+  {
+    if (!scene)
+      return false;
+
+    const Point3 ol = o - center;
+    RTCRayHit rh;
+    rh.ray.org_x = static_cast<float>(ol.x());
+    rh.ray.org_y = static_cast<float>(ol.y());
+    rh.ray.org_z = static_cast<float>(ol.z());
+    rh.ray.dir_x = static_cast<float>(d.x());
+    rh.ray.dir_y = static_cast<float>(d.y());
+    rh.ray.dir_z = static_cast<float>(d.z());
+    rh.ray.tnear = 0.0f;
+    rh.ray.tfar = std::numeric_limits<float>::infinity();
+    rh.ray.time = 0.0f;
+    rh.ray.mask = static_cast<unsigned>(-1);
+    rh.ray.id = 0;
+    rh.ray.flags = 0;
+    rh.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rh.hit.primID = RTC_INVALID_GEOMETRY_ID;
+    rh.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+
+#if RTC_VERSION_MAJOR >= 4
+    rtcIntersect1(scene, &rh);
+#else
+    RTCIntersectContext context;
+    rtcInitIntersectContext(&context);
+    rtcIntersect1(scene, &context, &rh);
+#endif
+
+    if (rh.hit.geomID == RTC_INVALID_GEOMETRY_ID)
+      return false;
+
+    // Recompute the hit in double on the reported triangle.
+    const auto& v = faces[rh.hit.primID];
+    if (RefineHit(o, d, VertexPoint(mesh, v[0]), VertexPoint(mesh, v[1]),
+        VertexPoint(mesh, v[2]), hit))
+    {
+      return true;
+    }
+    hit = o + d * static_cast<double>(rh.ray.tfar);
+    return true;
+  }
+
+  const Mesh& mesh;
+  RTCScene scene;
+  Vector3 center;
+  std::vector<std::array<Index, 3>> faces;
 };
 
 //////////////////////////////////////////////////
@@ -73,37 +198,11 @@ bool RayMeshQuery::FirstIntersection(
     const Direction3& _direction,
     Point3& _intersection) const
 {
-#if CGAL_VERSION_MAJOR >= 6
-  typedef std::optional<Tree::Intersection_and_primitive_id<
-      KRay>::Type> RayIntersection;
-#else
-  typedef boost::optional<Tree::Intersection_and_primitive_id<
-      KRay>::Type> RayIntersection;
-#endif
-
   const Vector3& d = _direction.vector();
-  KRay query(KPoint(_origin.x(), _origin.y(), _origin.z()),
-      KDirection(d.x(), d.y(), d.z()));
-  RayIntersection intersection = data->tree.first_intersection(query);
-
-  // Search both directions
-  if (!intersection)
-    intersection = data->tree.first_intersection(query.opposite());
-
-  if (intersection)
-  {
-#if CGAL_VERSION_MAJOR >= 6
-    const KPoint* p = std::get_if<KPoint>(&(intersection->first));
-#else
-    const KPoint* p = boost::get<KPoint>(&(intersection->first));
-#endif
-    if (p)
-    {
-      _intersection = Point3(p->x(), p->y(), p->z());
-      return true;
-    }
-  }
-  return false;
+  if (data->Intersect(_origin, d, _intersection))
+    return true;
+  // Search the opposite direction as well.
+  return data->Intersect(_origin, Vector3(-d), _intersection);
 }
 
 }  // namespace geom

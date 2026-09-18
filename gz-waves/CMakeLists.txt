@@ -315,6 +315,15 @@ if (${CGAL_VERSION_MAJOR} LESS 6)
 endif()
 
 #--------------------------------------
+# Embree (Apache-2.0): ray / mesh intersection queries (geom::RayMeshQuery).
+# Embree 4 is preferred; the 3.x API is also supported.
+find_package(embree 4 QUIET)
+if(NOT embree_FOUND)
+  find_package(embree 3 REQUIRED)
+endif()
+message(STATUS "Found Embree ${embree_VERSION}")
+
+#--------------------------------------
 # Find FFTW3 (double-precision) (GPL) as FFT library.
 
 find_path(FFTW3-3_INCLUDE_DIR

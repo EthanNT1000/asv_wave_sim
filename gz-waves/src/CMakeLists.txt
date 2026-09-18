@@ -66,6 +66,7 @@ target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
     ${FFT_LIBRARIES}
   PRIVATE
     OpenMP::OpenMP_CXX
+    embree
 )
 if (${CGAL_VERSION_MAJOR} GREATER_EQUAL 6)
   target_link_libraries(${PROJECT_LIBRARY_TARGET_NAME}
