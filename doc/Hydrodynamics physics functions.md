@@ -61,13 +61,13 @@ void Hydrodynamics::ComputeAllSubmergedForces(
         wavefieldSampler, t, this->data->params->GetWaterCurrentGrid());
 
     // ── Helper: accumulate a (force, torque) pair into the reduction scalars ──
-    auto acc = [&](const std::pair<cgal::Vector3, cgal::Vector3>& ft) {
-      fx += CGAL::to_double(ft.first.x());
-      fy += CGAL::to_double(ft.first.y());
-      fz += CGAL::to_double(ft.first.z());
-      tx += CGAL::to_double(ft.second.x());
-      ty += CGAL::to_double(ft.second.y());
-      tz += CGAL::to_double(ft.second.z());
+    auto acc = [&](const std::pair<geom::Vector3, geom::Vector3>& ft) {
+      fx += geom::ToDouble(ft.first.x());
+      fy += geom::ToDouble(ft.first.y());
+      fz += geom::ToDouble(ft.first.z());
+      tx += geom::ToDouble(ft.second.x());
+      ty += geom::ToDouble(ft.second.y());
+      tz += geom::ToDouble(ft.second.z());
     };
 
     // ── Buoyancy ──────────────────────────────────────────────────────────
@@ -90,8 +90,8 @@ void Hydrodynamics::ComputeAllSubmergedForces(
           props, rho, Cl_alpha, alpha_stall, Cl_max, AR, bottomThresh));
   }
 
-  this->data->force  += cgal::Vector3(fx, fy, fz);
-  this->data->torque += cgal::Vector3(tx, ty, tz);
+  this->data->force  += geom::Vector3(fx, fy, fz);
+  this->data->torque += geom::Vector3(tx, ty, tz);
 }
 ```
 
@@ -100,15 +100,15 @@ void Hydrodynamics::ComputeAllSubmergedForces(
 ```c++
 void Hydrodynamics::ComputePointVelocities(
     SubmergedTriangleProperties& props,
-    const cgal::Point3& position,
-    const cgal::Vector3& v_body,
-    const cgal::Vector3& omega,
+    const geom::Point3& position,
+    const geom::Vector3& v_body,
+    const geom::Vector3& omega,
     const WavefieldSampler& wavefieldSampler,
     double t,
     const WaterCurrentGrid& currentGrid)
 {
   props.xr = props.centroid - position;
-  props.vp = v_body + CGAL::cross_product(omega, props.xr);
+  props.vp = v_body + geom::Cross(omega, props.xr);
 
   const double cx = props.centroid.x();
   const double cy = props.centroid.y();
@@ -118,26 +118,26 @@ void Hydrodynamics::ComputePointVelocities(
   props.v_current = currentGrid.SampleAt(cx, cy);
   props.v_fluid   = props.v_orbital + props.v_current;
   props.v_rel     = props.vp - props.v_fluid;
-  props.v_rel_mag = std::sqrt(CGAL::to_double(props.v_rel.squared_length()));
+  props.v_rel_mag = std::sqrt(geom::ToDouble(props.v_rel.squared_length()));
 
-  const double v_rel_dot_n = CGAL::to_double(
-      CGAL::scalar_product(props.v_rel, props.normal));
+  const double v_rel_dot_n = geom::ToDouble(
+      geom::Dot(props.v_rel, props.normal));
   props.v_rel_n = props.normal * v_rel_dot_n;
   props.v_rel_t = props.v_rel - props.v_rel_n;
 
   const double v_rel_t_mag = std::sqrt(
-      CGAL::to_double(props.v_rel_t.squared_length()));
+      geom::ToDouble(props.v_rel_t.squared_length()));
   props.alpha = std::atan2(v_rel_dot_n, v_rel_t_mag + 1e-9);
 
   props.up = (props.v_rel_mag > 1e-9)
       ? props.v_rel / props.v_rel_mag
-      : CGAL::NULL_VECTOR;
-  props.cosTheta = CGAL::scalar_product(props.up, props.normal);
+      : geom::NullVector();
+  props.cosTheta = geom::Dot(props.up, props.normal);
   props.vn = props.normal * props.cosTheta * props.v_rel_mag;
   props.vt = props.v_rel - props.vn;
   props.ut = (v_rel_t_mag > 1e-9)
       ? props.v_rel_t / v_rel_t_mag
-      : CGAL::NULL_VECTOR;
+      : geom::NullVector();
   props.uf = -props.ut;
   props.vf = props.uf * props.v_rel_mag;
 }
@@ -146,34 +146,34 @@ void Hydrodynamics::ComputePointVelocities(
 1. Compute Buoyancy Force — the outer wrapper now returns a `(force, torque)` pair for the caller to accumulate; the inner center-of-pressure math (`Physics::BuoyancyForceAtCenterOfPressure` and its helpers) is unchanged from the original model:
 
 ```c++
-std::pair<cgal::Vector3, cgal::Vector3>
+std::pair<geom::Vector3, geom::Vector3>
 Hydrodynamics::ComputeBuoyancyForce(
     const WavefieldSampler& wavefieldSampler,
-    const cgal::Triangle& subTri,
-    const cgal::Point3& position,
-    cgal::Vector3& bForce_out,
-    cgal::Point3& bCenter_out)
+    const geom::Triangle& subTri,
+    const geom::Point3& position,
+    geom::Vector3& bForce_out,
+    geom::Point3& bCenter_out)
 {
-  cgal::Point3  bCenter = CGAL::ORIGIN;
-  cgal::Vector3 bForce  = CGAL::NULL_VECTOR;
+  geom::Point3  bCenter = geom::Origin();
+  geom::Vector3 bForce  = geom::NullVector();
   Physics::BuoyancyForceAtCenterOfPressure(
       wavefieldSampler, subTri, bCenter, bForce);
   bForce_out  = bForce;
   bCenter_out = bCenter;
-  const cgal::Vector3 xr     = bCenter - position;
-  const cgal::Vector3 torque = CGAL::cross_product(xr, bForce);
+  const geom::Vector3 xr     = bCenter - position;
+  const geom::Vector3 torque = geom::Cross(xr, bForce);
   return {bForce, torque};
 }
 
 void Physics::BuoyancyForceAtCenterOfPressure(
   const WavefieldSampler& _wavefieldSampler,
-  const cgal::Triangle& _triangle,
-  cgal::Point3& _center,
-  cgal::Vector3& _force
+  const geom::Triangle& _triangle,
+  geom::Point3& _center,
+  geom::Vector3& _force
 )
 {
   // Sort triangle vertices by height.
-  std::array<cgal::Point3, 3> v {
+  std::array<geom::Point3, 3> v {
     _triangle[0],
     _triangle[1],
     _triangle[2]
@@ -181,14 +181,14 @@ void Physics::BuoyancyForceAtCenterOfPressure(
   std::array<double, 3> vz { v[0].z(), v[1].z(), v[2].z() };
   auto index = algorithm::sort_indexes(vz);
 
-  cgal::Point3 H = v[index[0]];
-  cgal::Point3 M = v[index[1]];
-  cgal::Point3 L = v[index[2]];
+  geom::Point3 H = v[index[0]];
+  geom::Point3 M = v[index[1]];
+  geom::Point3 L = v[index[2]];
 
   // Calculate the depth at the centroid
-  cgal::Point3 C = Geometry::TriangleCentroid(_triangle);
+  geom::Point3 C = Geometry::TriangleCentroid(_triangle);
   double depthC = _wavefieldSampler.ComputeDepth(C);
-  cgal::Vector3 normal = Geometry::Normal(_triangle);
+  geom::Vector3 normal = Geometry::Normal(_triangle);
 
   // Calculate buoyancy
   BuoyancyForceAtCenterOfPressure(depthC, C, H, M, L, normal, _center, _force);
@@ -196,13 +196,13 @@ void Physics::BuoyancyForceAtCenterOfPressure(
 
 void Physics::BuoyancyForceAtCenterOfPressure(
   double _depthC,
-  const cgal::Point3& _C,
-  const cgal::Point3& _H,
-  const cgal::Point3& _M,
-  const cgal::Point3& _L,
-  const cgal::Vector3& _normal,
-  cgal::Point3& _center,
-  cgal::Vector3& _force
+  const geom::Point3& _C,
+  const geom::Point3& _H,
+  const geom::Point3& _M,
+  const geom::Point3& _L,
+  const geom::Vector3& _normal,
+  geom::Point3& _center,
+  geom::Vector3& _force
 )
 {
   double fluidDensity = PhysicalConstants::WaterDensity();  // kg m^-3
@@ -210,12 +210,12 @@ void Physics::BuoyancyForceAtCenterOfPressure(
 
   // Split the triangle into upper and lower triangles bisected by a
   // line normal to the z-axis
-  cgal::Point3 D = Geometry::HorizontalIntercept(_H, _M, _L);
-  cgal::Point3 B = Geometry::MidPoint(_M, D);
+  geom::Point3 D = Geometry::HorizontalIntercept(_H, _M, _L);
+  geom::Point3 B = Geometry::MidPoint(_M, D);
 
   double fU = 0, fL = 0;
-  cgal::Point3 CpU = B;
-  cgal::Point3 CpL = B;
+  geom::Point3 CpU = B;
+  geom::Point3 CpL = B;
 
   // Upper triangle H > M
   if (_H.z() >= _M.z())
@@ -223,7 +223,7 @@ void Physics::BuoyancyForceAtCenterOfPressure(
     double z0 = _depthC - (_H.z() - _C.z());
     CpU = CenterOfPressureApexUp(z0, _H, _M, B);
 
-    cgal::Point3 CU = Geometry::TriangleCentroid(_H, _M, D);
+    geom::Point3 CU = Geometry::TriangleCentroid(_H, _M, D);
     double hCU = _depthC + (_C.z() - CU.z());
     double area = Geometry::TriangleArea(_H, _M, D);
     fU = fluidDensity * gravity * area * hCU;
@@ -235,7 +235,7 @@ void Physics::BuoyancyForceAtCenterOfPressure(
     double z0 = _depthC + (_C.z() - _M.z());
     CpL = CenterOfPressureApexDn(z0, _L, _M, B);
 
-    cgal::Point3 CL = Geometry::TriangleCentroid(_L, _M, D);
+    geom::Point3 CL = Geometry::TriangleCentroid(_L, _M, D);
     double hCL = _depthC + (_C.z() - CL.z());
     double area = Geometry::TriangleArea(_L, _M, D);
     fL = fluidDensity * gravity * area * hCL;
@@ -246,14 +246,14 @@ void Physics::BuoyancyForceAtCenterOfPressure(
   _center = CenterOfForce(fU, fL, CpU, CpL);
 }
 
-cgal::Point3 Physics::CenterOfPressureApexUp(
+geom::Point3 Physics::CenterOfPressureApexUp(
   double _z0,
-  const cgal::Point3& _H,
-  const cgal::Point3& _M,
-  const cgal::Point3& _B
+  const geom::Point3& _H,
+  const geom::Point3& _M,
+  const geom::Point3& _B
 )
 {
-  cgal::Vector3 alt = _B - _H;
+  geom::Vector3 alt = _B - _H;
   double h = _H.z() - _M.z();
   double tc = 2.0/3.0;
   double div = 6.0 * _z0 + 4.0 * h;
@@ -265,14 +265,14 @@ cgal::Point3 Physics::CenterOfPressureApexUp(
   return _H + alt * tc;
 }
 
-cgal::Point3 Physics::CenterOfPressureApexDn(
+geom::Point3 Physics::CenterOfPressureApexDn(
   double _z0,
-  const cgal::Point3& _L,
-  const cgal::Point3& _M,
-  const cgal::Point3& _B
+  const geom::Point3& _L,
+  const geom::Point3& _M,
+  const geom::Point3& _B
 )
 {
-  cgal::Vector3 alt = _L - _B;
+  geom::Vector3 alt = _L - _B;
   double h = _M.z() - _L.z();
   double tc = 1.0/3.0;
   double div = 6.0 * _z0 + 2.0 * h;
@@ -284,10 +284,10 @@ cgal::Point3 Physics::CenterOfPressureApexDn(
   return _B + alt * tc;
 }
 
-cgal::Point3 Physics::CenterOfForce(
+geom::Point3 Physics::CenterOfForce(
   double _fA, double _fB,
-  const cgal::Point3& _A,
-  const cgal::Point3& _B
+  const geom::Point3& _A,
+  const geom::Point3& _B
 )
 {
   double div = _fA + _fB;
@@ -308,7 +308,7 @@ cgal::Point3 Physics::CenterOfForce(
 double Hydrodynamics::ComputeReynoldsNumber() const
 {
   // fluid speed, relative to the bulk current sampled at the CoM
-  cgal::Vector3 v_rel = this->data->linVelocity - this->data->waterCurrentCoM;
+  geom::Vector3 v_rel = this->data->linVelocity - this->data->waterCurrentCoM;
   double u = std::sqrt(v_rel.squared_length());
 
   // characteristic length
@@ -334,15 +334,15 @@ double Physics::ViscousDragCoefficient(double Rn)
 }
 
 // Viscous drag force - applied at triangle centroid.
-std::pair<cgal::Vector3, cgal::Vector3>
+std::pair<geom::Vector3, geom::Vector3>
 Hydrodynamics::ComputeViscousDragForce(
     const SubmergedTriangleProperties& props,
     double rho,
     double cF)
 {
   const double fDrag         = 0.5 * rho * cF * props.area * props.v_rel_mag;
-  const cgal::Vector3 force  = props.vf * fDrag;
-  const cgal::Vector3 torque = CGAL::cross_product(props.xr, force);
+  const geom::Vector3 force  = props.vf * fDrag;
+  const geom::Vector3 torque = geom::Cross(props.xr, force);
   return {force, torque};
 }
 ```
@@ -351,7 +351,7 @@ Hydrodynamics::ComputeViscousDragForce(
 
 ```c++
 // Pressure drag force - applied at triangle centroid.
-std::pair<cgal::Vector3, cgal::Vector3>
+std::pair<geom::Vector3, geom::Vector3>
 Hydrodynamics::ComputePressureDragForce(
     const SubmergedTriangleProperties& props,
     double cPDrag1, double cPDrag2, double fPDrag,
@@ -360,12 +360,12 @@ Hydrodynamics::ComputePressureDragForce(
 {
   const double S        = props.area;
   const double v        = props.v_rel_mag / vRDrag;
-  const double cosTheta = CGAL::to_double(props.cosTheta);
+  const double cosTheta = geom::ToDouble(props.cosTheta);
   const double drag = (cosTheta >= 0.0)
       ? -(cPDrag1 * v + cPDrag2 * v * v) * S * std::pow(cosTheta,  fPDrag)
       :  (cSDrag1 * v + cSDrag2 * v * v) * S * std::pow(-cosTheta, fSDrag);
-  const cgal::Vector3 force  = props.normal * drag;
-  const cgal::Vector3 torque = CGAL::cross_product(props.xr, force);
+  const geom::Vector3 force  = props.normal * drag;
+  const geom::Vector3 torque = geom::Cross(props.xr, force);
   return {force, torque};
 }
 ```
@@ -373,16 +373,16 @@ Hydrodynamics::ComputePressureDragForce(
 1. Compute Foil Lift Force — new: dynamic lift on near-horizontal, bottom-facing submerged triangles, with a stall cap on $C_l$ and an induced-drag penalty based on the dynamic foil aspect ratio:
 
 ```c++
-std::pair<cgal::Vector3, cgal::Vector3>
+std::pair<geom::Vector3, geom::Vector3>
 Hydrodynamics::ComputeFoilLiftForce(
     const SubmergedTriangleProperties& props,
     double rho,
     double Cl_alpha, double alpha_stall, double Cl_max,
     double AR, double bottomThresh)
 {
-  const double nz = CGAL::to_double(props.normal.z());
+  const double nz = geom::ToDouble(props.normal.z());
   if (nz < bottomThresh || props.v_rel_mag < 1e-4)
-    return {CGAL::NULL_VECTOR, CGAL::NULL_VECTOR};
+    return {geom::NullVector(), geom::NullVector()};
 
   const double alpha = props.alpha;
   const double Cl = (std::fabs(alpha) < alpha_stall)
@@ -391,18 +391,18 @@ Hydrodynamics::ComputeFoilLiftForce(
   const double Cdi = (Cl * Cl) / (M_PI * AR + 1e-9);
   const double q_A = 0.5 * rho * props.v_rel_mag * props.v_rel_mag * props.area;
 
-  cgal::Vector3 lift_dir = props.normal
-      - props.up * CGAL::to_double(
-            CGAL::scalar_product(props.normal, props.up));
+  geom::Vector3 lift_dir = props.normal
+      - props.up * geom::ToDouble(
+            geom::Dot(props.normal, props.up));
   const double ld_mag = std::sqrt(
-      CGAL::to_double(lift_dir.squared_length()));
+      geom::ToDouble(lift_dir.squared_length()));
   if (ld_mag < 1e-9)
-    return {CGAL::NULL_VECTOR, CGAL::NULL_VECTOR};
+    return {geom::NullVector(), geom::NullVector()};
 
   lift_dir = lift_dir / ld_mag;
-  const cgal::Vector3 F_foil =
+  const geom::Vector3 F_foil =
       lift_dir * (Cl * q_A) + (-props.up) * (Cdi * q_A);
-  return {F_foil, CGAL::cross_product(props.xr, F_foil)};
+  return {F_foil, geom::Cross(props.xr, F_foil)};
 }
 ```
 
@@ -453,7 +453,7 @@ if (this->aeroDragOn)
 {
   static constexpr double kRhoAir = 1.225;  // kg/m^3
 
-  cgal::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
+  geom::Vector3 coMVec = waves::ToVector3(linkCoMPose.Pos());
 
   const auto& tris = hd->hydrodynamics[j]->GetTriangleProperties();
   const int nTris = static_cast<int>(tris.size());
@@ -477,28 +477,28 @@ if (this->aeroDragOn)
 
     if (areaAbove < 1e-9) continue;
 
-    double nLen = std::sqrt(CGAL::to_double(tri.normal.squared_length()));
+    double nLen = std::sqrt(geom::ToDouble(tri.normal.squared_length()));
     if (nLen < 1e-9) continue;
-    cgal::Vector3 nHat = tri.normal / nLen;
+    geom::Vector3 nHat = tri.normal / nLen;
 
     // Hull velocity at the triangle centroid (CoM + angular correction).
-    cgal::Vector3 centroid = cgal::Vector3(
+    geom::Vector3 centroid = geom::Vector3(
         (tri.vh.x() + tri.vm.x() + tri.vl.x()) / 3.0,
         (tri.vh.y() + tri.vm.y() + tri.vl.y()) / 3.0,
         (tri.vh.z() + tri.vm.z() + tri.vl.z()) / 3.0);
-    cgal::Vector3 r = centroid - coMVec;
-    cgal::Vector3 vHull = linVelocity + CGAL::cross_product(angVelocity, r);
+    geom::Vector3 r = centroid - coMVec;
+    geom::Vector3 vHull = linVelocity + geom::Cross(angVelocity, r);
 
     // Normal component of relative wind.
-    cgal::Vector3 vRel = windVelocity - vHull;
-    double vn = CGAL::to_double(vRel * nHat);
+    geom::Vector3 vRel = windVelocity - vHull;
+    double vn = geom::ToDouble(vRel * nHat);
     if (vn <= 0.0) continue;  // lee side — no pressure
 
-    cgal::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
-    cgal::Vector3 tau = CGAL::cross_product(r, f);
+    geom::Vector3 f   = (0.5 * kRhoAir * this->cAeroDrag * areaAbove * vn * vn) * nHat;
+    geom::Vector3 tau = geom::Cross(r, f);
 
-    fx += CGAL::to_double(f.x()); fy += CGAL::to_double(f.y()); fz += CGAL::to_double(f.z());
-    tx += CGAL::to_double(tau.x()); ty += CGAL::to_double(tau.y()); tz += CGAL::to_double(tau.z());
+    fx += geom::ToDouble(f.x()); fy += geom::ToDouble(f.y()); fz += geom::ToDouble(f.z());
+    tx += geom::ToDouble(tau.x()); ty += geom::ToDouble(tau.y()); tz += geom::ToDouble(tau.z());
   }
 
   gz::math::Vector3d aeroForceSum(fx, fy, fz);
@@ -511,7 +511,7 @@ if (this->aeroDragOn)
 1. Bilinear sampling of the bulk water-current grid (`gz-waves/src/WaterCurrentGrid.cc`), used by both `ComputePointVelocities` (per submerged triangle) and `SampleWaterCurrentCoM` (once per link, for Reynolds number and per-DOF damping):
 
 ```c++
-gz::cgal::Vector3 WaterCurrentGrid::SampleAt(double x, double y) const
+gz::geom::Vector3 WaterCurrentGrid::SampleAt(double x, double y) const
 {
   if (!loaded_) return {0.0, 0.0, 0.0};
 

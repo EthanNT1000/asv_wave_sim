@@ -58,17 +58,17 @@ class Grid
   /// \return             A reference to this, the copy.
   Grid& operator=(const Grid& _other);
 
-  /// \brief Get the CGAL SurfaceMesh comprising the grid.
+  /// \brief Get the mesh comprising the grid.
   ///
   /// \return             A pointer to the mesh.
   std::shared_ptr<const geom::Mesh> GetMesh() const;
 
-  /// \brief Get the CGAL SurfaceMesh comprising the grid (mutable).
+  /// \brief Get the mesh comprising the grid (mutable).
   ///
   /// \return             A mutable pointer to the mesh.
   std::shared_ptr<geom::Mesh> GetMesh();
 
-  /// \brief Get the CGAL SurfaceMesh comprising the grid.
+  /// \brief Get the mesh comprising the grid.
   ///
   /// \return             An immutable reference to the mesh.
   const geom::Mesh& GetMeshByRef() const;

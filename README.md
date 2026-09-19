@@ -20,6 +20,8 @@ There are new features including FFT wave generation methods, ocean tiling, and 
 
 - The simulation uses [Eigen](https://eigen.tuxfamily.org/) (MPL-2.0) for geometry, [Embree](https://www.embree.org/) (Apache-2.0) for ray / mesh intersection queries and a vendored copy of [PocketFFT](https://github.com/mreineck/pocketfft) (BSD-3-Clause, header-only, in `gz-waves/thirdparty/pocketfft`) to compute Fourier transforms. CGAL is no longer required (see `docs/cgal_audit.md`) and no FFT library needs to be installed.
 
+- Embree is optional. Configure with `-DGZ_WAVES_WITH_EMBREE=OFF` to build without it: `geom::RayMeshQuery` then falls back to a brute-force ray / triangle scan, which is slower per ray but needs no extra package.
+
 - [OpenMP](https://www.openmp.org/) is used to parallelise wave mesh updates, hydrodynamics force calculations, and FFT execution across multiple CPU cores.
 
 - This fork packages `gz-waves` and `gz-waves-models` as ROS 2 `ament_cmake` packages (see [ROS 2 / ament build](#ros-2--ament-build) below), and extends the hydrodynamics system with a Fossen-style per-DOF damping model, planing-hull foil lift, aerodynamic drag on above-waterline faces, a bulk water-current field, and telemetry/sensor plugins (InfluxDB export, speed-through-water topic, anemometer). See the [Changes](#changes) section and the physics write-ups in [`doc/`](doc/) for details.
@@ -51,7 +53,7 @@ If you are building with **Clang** instead of GCC, install the LLVM OpenMP runti
 sudo apt-get install libomp-dev
 ```
 
-The Fourier transforms of the FFT wave model (PocketFFT) are multi-threaded with `std::thread` using the same thread budget as OpenMP (`OMP_NUM_THREADS`); no additional package is required.
+The FFT wave model runs its eight per-step transforms concurrently under OpenMP (one transform per thread, `OMP_NUM_THREADS`); each individual PocketFFT transform is single-threaded. No additional package is required.
 
 ## macOS
 

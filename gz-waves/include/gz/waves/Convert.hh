@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// \file Convert.hh
-/// \brief Utility methods for converting between CGAL and Gazebo types.
+/// \brief Utility methods for converting between geom and Gazebo types.
 
 #ifndef GZ_WAVES_CONVERT_HH_
 #define GZ_WAVES_CONVERT_HH_
@@ -28,31 +28,28 @@ namespace gz
 {
 namespace waves
 {
-/// \brief Convert a CGAL Point3 to a gazebo Vector3d
-/// \param[in] point    The point to convert
-/// \return             The converted point
-
-/// \brief Convert a CGAL Vector2 to a gazebo Vector2d
+/// \brief Convert a geom Vector2 to a gazebo Vector2d
 /// \param[in] vector   The vector to convert
 /// \return             The converted vector
 gz::math::Vector2d ToGz(const geom::Vector2& vector);
 
-/// \brief Convert a CGAL Vector3 to a gazebo Vector3d
+/// \brief Convert a geom Vector3 (or Point3, the same type) to a gazebo
+/// Vector3d
 /// \param[in] vector   The vector to convert
 /// \return             The converted vector
 gz::math::Vector3d ToGz(const geom::Vector3& vector);
 
-/// \brief Convert a gazebo Vector3d to a CGAL Point3
+/// \brief Convert a gazebo Vector3d to a geom Point3
 /// \param[in] vector   The vector to convert
 /// \return             The converted point
 geom::Point3 ToPoint3(const gz::math::Vector3d& vector);
 
-/// \brief Convert a gazebo Vector2d to a CGAL Vector2
+/// \brief Convert a gazebo Vector2d to a geom Vector2
 /// \param[in] vector   The vector to convert
 /// \return             The converted vector
 geom::Vector2 ToVector2(const gz::math::Vector2d& vector);
 
-/// \brief Convert a gazebo Vector3d to a CGAL Vector3
+/// \brief Convert a gazebo Vector3d to a geom Vector3
 /// \param[in] vector   The vector to convert
 /// \return             The converted vector
 geom::Vector3 ToVector3(const gz::math::Vector3d& vector);

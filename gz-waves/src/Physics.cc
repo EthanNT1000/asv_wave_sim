@@ -800,7 +800,7 @@ class HydrodynamicsPrivate
   /// \brief Pose of the centre of mass.
   gz::math::Pose3d pose;
 
-  /// \brief Position of the centre of mass (CGAL types).
+  /// \brief Position of the centre of mass (geom types).
   geom::Point3 position;
 
   // \brief Linear velocity of the centre of mass.

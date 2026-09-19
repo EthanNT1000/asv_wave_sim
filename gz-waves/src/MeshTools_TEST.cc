@@ -38,7 +38,7 @@
 
 namespace geom = gz::waves::geom;
 
-/// \brief Minimal stand-in for CGAL::Timer (wall clock, seconds).
+/// \brief Minimal wall-clock timer (seconds).
 class Timer
 {
  public:

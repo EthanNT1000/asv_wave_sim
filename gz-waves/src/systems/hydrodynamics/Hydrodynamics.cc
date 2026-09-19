@@ -294,8 +294,8 @@ private: void UpdatePhysics(const UpdateInfo& _info,
 public: bool IsEnabled(Entity _entity,
   const EntityComponentManager& _ecm) const;
 
-      /// \brief Iterate over the links in a model, and create a CGAL
-      /// SurfaceMesh for each collison in each link.
+      /// \brief Iterate over the links in a model, and create a
+      /// geom::Mesh for each collison in each link.
       ///
       /// \param[in]  _model    The model being processed.
       /// \param[out] _links    A vector holding a copy of pointers to
@@ -1204,7 +1204,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         GZ_ASSERT(gz::common::MeshManager::Instance()->HasMesh(meshName),
           "Failed to create Mesh for Box");
 
-        // Create the CGAL surface mesh
+        // Create the collision mesh
         std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
@@ -1237,7 +1237,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         GZ_ASSERT(gz::common::MeshManager::Instance()->HasMesh(meshName),
           "Failed to create Mesh for Sphere");
 
-        // Create the CGAL surface mesh
+        // Create the collision mesh
         std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
@@ -1270,7 +1270,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
         GZ_ASSERT(gz::common::MeshManager::Instance()->HasMesh(meshName),
           "Failed to create Mesh for Cylinder");
 
-        // Create the CGAL surface mesh
+        // Create the collision mesh
         std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->
@@ -1319,7 +1319,7 @@ void HydrodynamicsPrivate::CreateCollisionMeshes(
           return;
         }
 
-        // Create the CGAL surface mesh
+        // Create the collision mesh
         std::shared_ptr<geom::Mesh> mesh = std::make_shared<geom::Mesh>();
         waves::MeshTools::MakeSurfaceMesh(
           *gz::common::MeshManager::Instance()->Load(file), *mesh);

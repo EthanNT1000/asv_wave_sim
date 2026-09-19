@@ -14,8 +14,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 /// \file MeshTools.hh
-/// \brief This file defines methods used to convert between CGAL
-/// and Gazebo meshes.
+/// \brief This file defines methods used to convert Gazebo meshes
+/// into the geom mesh used by the wave and hydrodynamics code.
 
 #ifndef GZ_WAVES_MESHTOOLS_HH_
 #define GZ_WAVES_MESHTOOLS_HH_
@@ -33,7 +33,7 @@ namespace waves
 {
 
 /// \brief A collection of static methods for switching between
-///        Gazebo and CGAL meshes.
+///        Gazebo and geom meshes.
 class MeshTools
 {
  public:
@@ -48,10 +48,10 @@ class MeshTools
     std::vector<float>& _vertices,
     std::vector<int>& _indices);
 
-  /// \brief Make a SurfaceMesh from a Gazebo Mesh.
+  /// \brief Make a geom::Mesh from a Gazebo Mesh.
   ///
   /// \param[in] _source      The source mesh (a Gazebo Mesh).
-  /// \param[out] _target     The target mesg (a CGAL SurfaceMesh).
+  /// \param[out] _target     The target mesh (a geom::Mesh).
   static void MakeSurfaceMesh(
     const gz::common::Mesh& _source,
     geom::Mesh& _target);
